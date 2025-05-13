@@ -7,17 +7,6 @@ The validation process uses the SHA-256 function to ensure the integrity of each
 
 By adopting this mechanism, our project simulates adding transactions to a block, finding the correct "nonce" to solve the cryptographic problem, and managing consensus through a local network of actors. However, this is a prototype for now, with minimal security and is currently not resistant to attacks. The primary goal is to faithfully replicate the functioning of a blockchain.
 
-## 📝 Table of Contents
-
-- [Features](#features)
-- [Technologies Used](#technologies-used)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Versions](#versions)
-
----
-
 Quick preview of the Pre-Release Version (Frontend Explorer):
 
 ![Home Page](https://github.com/shash64/Noctal/blob/main/KernelScreenshots/homepage.png)
