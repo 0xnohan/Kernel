@@ -18,4 +18,13 @@ By adopting this mechanism, our project simulates adding transactions to a block
 
 ---
 
-SOON
+Quick preview of the Pre-Release Version (Frontend Explorer):
+
+![Home Page](https://github.com/shash64/Noctal/blob/main/KernelScreenshots/homepage.png)
+![Block Page](https://github.com/shash64/Noctal/blob/main/KernelScreenshots/blockpage.png)
+![Block Details Page](https://github.com/shash64/Noctal/blob/main/KernelScreenshots/blockdetails.png)
+![Block Details 2 Page](https://github.com/shash64/Noctal/blob/main/KernelScreenshots/blockdetails2.png)
+![Address Page](https://github.com/shash64/Noctal/blob/main/KernelScreenshots/addressExplorer.png)
+
+
+GUI preview comming Soon
