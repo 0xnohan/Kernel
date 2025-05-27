@@ -1,6 +1,6 @@
 # Kernel
 
-**Kernel** is an implementation of a blockchain in Python, complete with a build-in GUI.  
+**Kernel** is an implementation of a blockchain in Python.  
 This project is directly inspired by the consensus mechanism and chain structure of **Bitcoin**.  
 The consensus is based on the **Proof-of-Work algorithm**, where miners must solve complex cryptographic problems to validate new blocks and add them to the chain.  
 The validation process uses the SHA-256 function to ensure the integrity of each block's data. Each block contains a hash of the previous block, creating a secure and immutable chain of blocks.
