@@ -1,0 +1,18 @@
+# Fichiers Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Mac
+.DS_Store
+
+# Dossiers virtuels
+venv/
+.env/
+
+# Logs
+*.log
+
+# Autres caches
+*.cache

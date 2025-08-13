@@ -4,6 +4,9 @@ from Blockchain.Backend.core.Tx import Tx
 from Blockchain.Backend.core.database.database import BlockchainDB, NodeDB
 from Blockchain.Backend.util.util import encode_base58, decode_base58
 from Blockchain.Backend.core.network.syncManager import syncManager
+from Blockchain.client.account import account 
+from Blockchain.Backend.core.database.database import AccountDB 
+
 from hashlib import sha256
 from multiprocessing import Process
 from flask_qrcode import QRcode
@@ -385,50 +388,74 @@ def address(publicAddress):
 @app.route("/wallet", methods=["GET", "POST"])
 def wallet():
     message = ""
+    acc_db = AccountDB()
+    wallets = acc_db.read() or []
+
     if request.method == "POST":
-        FromAddress = request.form.get("fromAddress")
-        ToAddress = request.form.get("toAddress")
+        action = request.form.get("action")
+
+        if action == "send":
+
+            FromAddress = request.form.get("fromAddress")
+            ToAddress = request.form.get("toAddress")
     
-        Amount_str = request.form.get("Amount") 
-        Amount_float = None 
+            Amount_str = request.form.get("Amount") 
+            Amount_float = None 
 
-        if Amount_str:
-            try:
-                Amount_float = float(Amount_str) 
-                if Amount_float <= 0:
-                    message = "Amount must be positive."
+            if Amount_str:
+                try:
+                    Amount_float = float(Amount_str) 
+                    if Amount_float <= 0:
+                        message = "Amount must be positive."
+                        Amount_float = None 
+                except ValueError:
+                    message = "Invalid Amount entered."
                     Amount_float = None 
-            except ValueError:
-                message = "Invalid Amount entered."
-                Amount_float = None 
-        else:
-             message = "Amount is required."
+            else:
+                message = "Amount is required."
 
-        if Amount_float is not None and not message:
-            global MEMPOOL, UTXOS
-            sendCoin = SendBTC(FromAddress, ToAddress, Amount_float, UTXOS, MEMPOOL)
+            if Amount_float is not None and not message:
+                global MEMPOOL, UTXOS
+                sendCoin = SendBTC(FromAddress, ToAddress, Amount_float, UTXOS, MEMPOOL)
 
-            TxObj = sendCoin.prepareTransaction()
+                TxObj = sendCoin.prepareTransaction()
 
-            verified = True 
+                verified = True 
 
-            if not TxObj:
-                if hasattr(sendCoin, 'isBalanceEnough') and not sendCoin.isBalanceEnough:
-                     message = "Insufficient Balance."
-                else:
-                     message = "Invalid Transaction Details or Failed Preparation." 
-            elif isinstance(TxObj, Tx):
-                 if verified: 
-                    MEMPOOL[TxObj.TxId] = TxObj
-                    global localHostPort
-                    if 'localHostPort' in globals():
-                         relayTxs = Process(target=broadcastTx, args=(TxObj, localHostPort))
-                         relayTxs.start()
-                         message = "Transaction added to Memory Pool"
+                if not TxObj:
+                    if hasattr(sendCoin, 'isBalanceEnough') and not sendCoin.isBalanceEnough:
+                        message = "Insufficient Balance."
                     else:
-                         message = "Transaction prepared but cannot determine local port to broadcast"
+                        message = "Invalid Transaction Details or Failed Preparation." 
+                elif isinstance(TxObj, Tx):
+                    if verified: 
+                        MEMPOOL[TxObj.TxId] = TxObj
+                        global localHostPort
+                        if 'localHostPort' in globals():
+                            relayTxs = Process(target=broadcastTx, args=(TxObj, localHostPort))
+                            relayTxs.start()
+                            message = "Transaction added to Memory Pool"
+                        else:
+                            message = "Transaction prepared but cannot determine local port to broadcast"
+        elif action == "create":
+            try:
+                new_wallet_account = account()
+                new_wallet_data = new_wallet_account.createKeys()
+                acc_db.write([new_wallet_data]) 
+                message = f"New wallet created successfully: {new_wallet_data['PublicAddress']}"
+                wallets = acc_db.read() or []
+            except Exception as e:
+                message = f"Error creating wallet: {e}"
 
-    return render_template("wallet.html", message=message) 
+        elif action == "delete":
+            address_to_delete = request.form.get("publicAddress")
+            if address_to_delete:
+                updated_wallets = [w for w in wallets if w.get('PublicAddress') != address_to_delete]
+                acc_db.update(updated_wallets) 
+                message = f"Wallet {address_to_delete[:10]}... deleted."
+                wallets = updated_wallets 
+            
+    return render_template("wallet.html", message=message, wallets=wallets) 
 
 def broadcastTx(TxObj, localHostPort = None):
     try:

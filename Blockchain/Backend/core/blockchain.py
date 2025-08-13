@@ -1,6 +1,6 @@
 import sys
 
-sys.path.append('/Users/linobo/Desktop/Kernel')
+sys.path.append('/Users/linobo/Desktop/Kernel') # Your path to the project
 
 import copy
 import configparser
