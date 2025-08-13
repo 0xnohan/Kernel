@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}Wallet{% endblock %}
+
+{% block content %}
+<section class="card form-card wallet-card" style="max-width: 600px; margin: 2em auto;"> 
+  <header class="card-header">
+      <h1 class="card-title">Send Transaction</h1>
+  </header>
+  <div class="card-body">
+    <form action="#" id="send-form" method="post">
+      <div class="form-group">
+        <label for="from">From Address</label>
+        <input type="text" id="from" name="fromAddress" class="form-input font-mono" placeholder="Your sending address" required />
+      </div>
+
+      <div class="form-group">
+        <label for="to">To Address</label>
+        <input type="text" id="to" name="toAddress" class="form-input font-mono" placeholder="Recipient's address" required />
+      </div>
+
+      <div class="form-group">
+        <label for="amount">Amount (KNL)</label>
+        <input type="number" id="amount" name="Amount" class="form-input" placeholder="0.00000000" step="any" min="0" required /> 
+      </div>
+
+      {% if message %}
+      <div class="form-message" role="alert"> 
+        <span>{{ message }}</span>
+      </div>
+      {% endif %}
+
+      <div class="form-actions">
+        <button type="submit" class="button button-primary">Send Transaction</button>
+      </div>
+    </form>
+  </div>
+</section>
+{% endblock %}

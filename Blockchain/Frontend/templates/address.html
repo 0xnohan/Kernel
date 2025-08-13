@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+{% block title %} Address {{ publicAddress }} {% endblock %}
+
+{% block content %}
+<div class="page-container address-page">
+  <section class="card data-card address-header-card-v2">
+    <div class="card-body address-summary-v2">
+        <div class="address-left">
+             <img id="QR" class="qr-code-v2" src="{{ qrcode(publicAddress, box_size=4, border=1) }}" alt="QR Code for {{ publicAddress }}" />
+             <div class="address-info">
+                <h1 class="address-title">Address</h1>
+                <h2 class="address-hash font-mono">{{ publicAddress }}</h2>
+             </div>
+        </div>
+        <div class="address-right">
+            <div class="balance-info">
+                <span class="balance-label-v2">Available Balance</span>
+                <span class="balance-value-v2">{{ "{:.8f}".format(balance_display | default(0.0)).rstrip('0').rstrip('.') }} KNL</span>
+            </div>
+        </div>
+    </div>
+  </section>
+  <section class="card data-card address-stats-card-v2">
+     <div class="card-body">
+       <dl class="definition-list horizontal stats-list">
+          <div class="definition-item stat-item">
+            <dt>Unspent Transactions</dt>
+            <dd>{{ "{:,}".format(unspent_tx_count | default(0)) }}</dd>
+          </div>
+           <div class="definition-item stat-item">
+            <dt>Total Transactions</dt>
+            <dd>{{ "{:,}".format(total_tx_count | default(0)) }}</dd>
+          </div>
+          <div class="definition-item stat-item">
+            <dt>Total Received</dt>
+            <dd class="value-positive">{{ "{:.8f}".format(total_received | default(0.0)).rstrip('0').rstrip('.') }} KNL</dd>
+          </div>
+          <div class="definition-item stat-item">
+            <dt>Total Sent</dt>
+            <dd>--- KNL</dd>
+          </div>
+       </dl>
+     </div>
+  </section>
+
+{% if amount > 0 %}
+  <div class="utxo-section-header"> 
+    <h2 class="section-title">Unspent Outputs (UTXOs)</h2>
+    {% if tx_total_pages > 1 %}
+      <nav aria-label="Transaction page navigation" class="tx-pagination">
+          <ul class="pagination pagination-sm"> 
+              <li class="page-item {% if tx_current_page <= 1 %}disabled{% endif %}">
+                  <a class="page-link" href="{{ url_for('address', publicAddress=publicAddress, tx_page=tx_current_page - 1) if tx_current_page > 1 else '#' }}">&laquo;</a>
+              </li>
+              <li class="page-item disabled"><span class="page-link">{{ tx_current_page }}/{{ tx_total_pages }}</span></li>
+              <li class="page-item {% if tx_current_page >= tx_total_pages %}disabled{% endif %}">
+                  <a class="page-link" href="{{ url_for('address', publicAddress=publicAddress, tx_page=tx_current_page + 1) if tx_current_page < tx_total_pages else '#' }}">&raquo;</a>
+              </li>
+          </ul>
+      </nav>
+    {% endif %}
+  </div>
+
+  {% if Txs %} 
+      {% for tx_obj in Txs %}
+      <section class="card data-card transaction-details-card address-tx-card">
+         <header class="card-header transaction-id-header">
+           <h3 class="transaction-id font-mono"><a href="{{ url_for('transactions', txid=tx_obj.id()) }}">{{ tx_obj.id() }}</a></h3>
+         </header>
+         <div class="card-body transaction-io">
+             <div class="tx-inputs">
+               <h4>Inputs</h4>
+               <ul class="tx-io-list">
+                 {% for tx_in in tx_obj.tx_ins %}<li> {% if tx_in.prev_tx.hex() == '00' * 32 %}<span class="coinbase-input"><span class="io-index">#{{ loop.index0 }}</span> Coinbase</span>{% else %}<span class="input-item font-mono"><span class="io-index">#{{ loop.index0 }}</span> From: <a href="{{ url_for('transactions', txid=tx_in.prev_tx.hex()) }}" title="{{ tx_in.prev_tx.hex() }}">{{ tx_in.prev_tx.hex()[:12]}}...{{ tx_in.prev_tx.hex()[-12:]}}</a></span>{% endif %}</li>{% endfor %}
+               </ul>
+             </div>
+             <div class="tx-outputs">
+               <h4>Outputs</h4>
+               <ul class="tx-io-list">
+                 {% for tx_out in tx_obj.tx_outs %} {% set h160bytes = tx_out.script_pubkey.cmds[2] %}{% set addr_prefix = main_prefix %}{% set addr_data = addr_prefix + h160bytes %}{% set chksum = sha256(sha256(addr_data).digest()).digest()[:4] %}{% set full_addr_bytes = addr_data + chksum %}{% set outAddress = encode_base58(full_addr_bytes) %}{% set raw_amount = tx_out.amount %}{% set divisor = 100000000 %}{% if (raw_amount % divisor) == 0 %}{% set amount_out = (raw_amount / divisor)|int %}{% else %}{% set amount_out = "{:,.8f}".format(raw_amount / divisor).rstrip('0').rstrip('.') %}{% endif %}<li class="{% if outAddress == publicAddress %} self-address {% endif %}"><a href="{{ url_for('address', publicAddress=outAddress) }}" class="output-link"><span class="io-index">#{{ loop.index0 }}</span><span class="output-address font-mono">{{ outAddress }}</span><span class="output-amount">{{ amount_out }} KNL</span></a></li>{% endfor %}
+               </ul>
+             </div>
+         </div>
+      </section>
+      {% endfor %}
+  {% else %}
+       {% if tx_current_page == 1 %} 
+         <p class="no-data-message">No UTXOs found for this address</p>
+       {% endif %}
+  {% endif %}
+
+{% else %}
+
+   <p class="no-data-message">This address has no unspent outputs. Transaction history is hidden.</p>
+{% endif %} 
+
+</div> 
+{% endblock %}

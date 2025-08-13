@@ -1,0 +1,162 @@
+{% extends 'base.html' %}
+{% block title %}Mempool Visualization{% endblock %}
+
+{% block content %}
+<div class="page-container mempool-page">
+
+    <section class="card mempool-visual-card">
+        <header class="card-header">
+            <h1 class="card-title">Mempool Visualization</h1>
+            <span class="header-meta">{{ total_txs_count | default(0) }} Transactions Pending</span>
+        </header>
+        <div class="card-body">
+            {% if Txs %}
+            <div class="mempool-visualization-container">
+
+                <div id="mempool-tooltip" class="mempool-tooltip" style="display: none; opacity: 0;"></div>
+
+                {% for TxId, tx_info in Txs.items() %}
+                {% set value = tx_info.value | default(0.0) | float %}
+                {% set loop_index = loop.index %}
+                <a href="{{ url_for('memTxDetails', txid=TxId) }}"
+                   class="mempool-tx-block"
+                   data-value="{{ value }}"
+                   data-txid="{{ TxId }}"
+                   data-index="{{ loop_index }}"
+                   aria-label="Transaction {{ loop_index }}">
+                </a>
+                {% endfor %} 
+            </div>
+            {% else %}
+            <p class="no-data-message">Mempool is empty.</p>
+            {% endif %} 
+            
+        </div>
+    </section>
+
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const blocks = document.querySelectorAll('.mempool-tx-block');
+    const container = document.querySelector('.mempool-visualization-container');
+    const tooltip = document.getElementById('mempool-tooltip');
+
+    if (blocks.length > 0 && container && tooltip) {
+        let values = [];
+        blocks.forEach(block => {
+            const value = parseFloat(block.dataset.value || 0);
+            values.push(value);
+            block.style.opacity = '0';
+            block.style.transform = 'scale(0.5)';
+        });
+
+        const minValue = Math.min(...values.filter(v => v > 0));
+        const maxValue = Math.max(...values);
+        const logMaxValue = (maxValue > 0 && maxValue > minValue) ? Math.log(maxValue + 1) : Math.log(2);
+        const logMinValue = (minValue > 0 && maxValue > minValue) ? Math.log(minValue + 1) : Math.log(1);
+        const minSize = 25;
+        const maxSize = 95;
+
+        const scaleValue = (value) => {
+             if (value <= 0 || !maxValue || maxValue === minValue) { return minSize; }
+             const logValue = Math.log(value + 1);
+             const range = logMaxValue - logMinValue;
+             const normalized = range > 0 ? (logValue - logMinValue) / range : 0;
+             const size = minSize + normalized * (maxSize - minSize);
+             return Math.max(minSize, Math.min(maxSize, size));
+        };
+
+        blocks.forEach((block) => {
+            const value = parseFloat(block.dataset.value || 0);
+            const txid = block.dataset.txid;
+            const loopIndex = block.dataset.index;
+            const size = scaleValue(value);
+
+            block.style.width = `${size}px`;
+            block.style.height = `${size}px`;
+
+            const delay = Math.random() * 0.6;
+            block.style.transition = `opacity 0.4s ease-out ${delay}s, transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) ${delay}s, background-color 0.15s linear, border-color 0.15s linear`;
+
+             setTimeout(() => {
+                 block.style.opacity = '1';
+                 block.style.transform = 'scale(1)';
+             }, 50);
+
+            let timeoutId = null;
+
+            const showTooltip = (e) => {
+                clearTimeout(timeoutId);
+                const currentBlock = e.currentTarget; 
+                const formattedValue = parseFloat(value).toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 8 });
+                tooltip.innerHTML = `
+                    <strong>Tx #${loopIndex}</strong>
+                    <span class="tooltip-label">ID:</span> ...${txid.slice(-16)}<br>
+                    <span class="tooltip-label">Value:</span> ${formattedValue} NOC
+                `;
+                tooltip.style.display = 'block'; 
+                tooltip.style.opacity = '0';   
+
+                requestAnimationFrame(() => { 
+                    const tooltipRect = tooltip.getBoundingClientRect(); 
+
+                    const blockTop = currentBlock.offsetTop;
+                    const blockLeft = currentBlock.offsetLeft;
+                    const blockHeight = currentBlock.offsetHeight;
+                    const blockWidth = currentBlock.offsetWidth;
+
+                    let top = blockTop + blockHeight + 8; 
+                    let left = blockLeft + (blockWidth / 2) - (tooltipRect.width / 2); 
+                    const margin = 5;
+                    if (left < margin) {
+                        left = margin;
+                    }
+                    if (left + tooltipRect.width > container.clientWidth - margin) {
+                        left = container.clientWidth - tooltipRect.width - margin;
+                    }
+                     if (top < margin) {
+                         top = margin;
+                     }
+                     if (top + tooltipRect.height > container.scrollHeight - margin) {
+                        top = blockTop - tooltipRect.height - 8;
+                        if (top < container.scrollTop + margin) {
+                             top = container.scrollTop + margin;
+                        }
+                     }
+
+
+                    tooltip.style.top = `${top}px`;
+                    tooltip.style.left = `${left}px`;
+
+                     requestAnimationFrame(() => { 
+                        tooltip.style.opacity = '1';
+                     });
+                });
+            };
+
+            const hideTooltip = () => {
+                 timeoutId = setTimeout(() => {
+                    tooltip.style.opacity = '0';
+                    tooltip.addEventListener('transitionend', () => {
+                        if (tooltip.style.opacity === '0') {
+                           tooltip.style.display = 'none';
+                        }
+                    }, { once: true });
+                 }, 100);
+            };
+
+            block.addEventListener('mouseenter', showTooltip);
+            block.addEventListener('mouseleave', hideTooltip);
+
+             tooltip.addEventListener('mouseenter', () => clearTimeout(timeoutId));
+             tooltip.addEventListener('mouseleave', hideTooltip);
+
+        }); 
+
+    } else {
+        console.log("Aucun bloc mempool trouvé à afficher ou animer");
+    }
+});
+</script>
+
+{% endblock %}

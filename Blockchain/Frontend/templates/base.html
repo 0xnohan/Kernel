@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    {# {% if refreshtime %}
+    <meta http-equiv="refresh" content="{{ refreshtime }}" />
+    {% endif %} #}
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="{{ url_for('static', filename='images/Kernel_icon.png') }}" />
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+    <title>{% block title %}Blockchain Explorer{% endblock %}</title>
+</head>
+<body>
+    <header class="main-header">
+        <div class="container header-container">
+            <a href="{{ url_for('index') }}" class="logo-link">
+                <img id="logo" src="{{ url_for('static', filename='images/Kernel.png') }}" alt="Noctal" />
+            </a>
+            <nav class="main-nav">
+                <ul>
+                    <li><a href="{{ url_for('index') }}">Home</a></li>
+                    <li><a href="{{ url_for('block') }}">Blocks</a></li>
+                    <li><a href="{{ url_for('transactions') }}">Transactions</a></li>
+                    <li><a href="{{ url_for('mempool') }}">Mempool</a></li>
+                    <li><a href="{{ url_for('wallet') }}">Wallet</a></li>
+                </ul>
+            </nav>
+            <div class="search-container">
+                <form action="{{ url_for('search') }}" method="get" class="search-form">
+                    <input
+                        type="text"
+                        placeholder="Search Block, Tx, Address..." {# Placeholder plus court #}
+                        name="search"
+                        required
+                        class="search-input"
+                    />
+                    <button type="submit" class="search-button" aria-label="Search">
+                         <img src="{{ url_for('static', filename='images/search.png') }}" alt="Search" />
+                    </button>
+                </form>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-content container">
+        {% block content %}
+        {# Le contenu spécifique à chaque page #}
+        {% endblock %}
+    </main>
+
+
+    <footer class="main-footer">
+        <div class="container">
+            <p>&copy; {{ now().year if now else '2025' }} Kernel</p> 
+        </div>
+    </footer>
+</body>
+</html>

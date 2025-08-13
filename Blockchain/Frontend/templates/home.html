@@ -1,0 +1,42 @@
+{% extends 'base.html' %} {% block title %}Home{% endblock %} {% block content
+  %} 
+  <section class="hero-section">
+    <div class="hero-content">
+      <h1 class="hero-title">KERNEL</h1>
+      <p class="hero-subtitle">The Future of Decentralized Finance</p>
+    </div>
+  </section>
+  
+  <section class="card data-card blockchain-summary-card">
+    <header class="card-header">
+      <h2 class="card-title">Blockchain Overview</h2>
+    </header>
+    <div class="card-body">
+      <dl class="definition-list horizontal">
+        <div class="definition-item">
+          <dt>Block Height</dt>
+          <dd>{{ block_height }}</dd>
+        </div>
+
+        <div class="definition-item">
+          <dt>Total Transactions</dt>
+          <dd>{{ "{:,}".format(total_txs) }}</dd>
+        </div>
+
+        <div class="definition-item">
+          <dt>Wallets</dt>
+          <dd>{{ num_wallets }}</dd>
+        </div>
+        <div class="definition-item">
+          <dt>Total KNL in Circulation</dt>
+          <dd>{{ "{:,.2f}".format(total_knl) }}</dd>
+        </div>
+  
+        <div class="definition-item">
+          <dt>Max Supply</dt>
+          <dd>{{"{:,.0f}".format(fake_price)}} KNL</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+{% endblock %}
