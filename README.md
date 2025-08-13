@@ -1,14 +1,11 @@
 # Kernel
 
-**Kernel** is an implementation of a blockchain in Python.  
+**Kernel** is a simplified implementation of a blockchain in Python, complete with a build-in explorer.  
 This project is directly inspired by the consensus mechanism and chain structure of **Bitcoin**.  
 The consensus is based on the **Proof-of-Work algorithm**, where miners must solve complex cryptographic problems to validate new blocks and add them to the chain.  
 The validation process uses the SHA-256 function to ensure the integrity of each block's data. Each block contains a hash of the previous block, creating a secure and immutable chain of blocks.
 
-By adopting this mechanism, my project simulates adding transactions to a block, finding the correct "nonce" to solve the cryptographic problem, and managing consensus through a local network of actors. However, this is a prototype for now, with minimal security and is currently not resistant to attacks. The primary goal is to faithfully replicate the functioning of a blockchain.
-
-This project come from a deep interest in the world of cryptocurrencies and blockchain technology over the past 7 years. It is the logical continuation of numerous projects and learning experiences I have undertaken in this field.  
-This project is not entirely my own work, as I do not possess the necessary skills to implement certain blockchain mechanisms myself, particularly complex cryptographic principles (e.g., elliptic curve functions, opcodes, and Merkle tree-related functions).
+By adopting this mechanism, my project simulates adding transactions to a block, finding the correct "nonce" to solve the cryptographic problem, and managing consensus through a local network of actors. However, this is a prototype with minimal security and is currently not resistant to attacks. The primary goal is to faithfully replicate the functioning of a blockchain.
 
 ## 📝 Table of Contents
 
@@ -21,7 +18,6 @@ This project is not entirely my own work, as I do not possess the necessary skil
 - [Versions](#versions)
 
 ---
-
 ## About
 
 This project aims to gain experience while also demonstrating how a blockchain works from the ground up:
@@ -34,6 +30,9 @@ This project aims to gain experience while also demonstrating how a blockchain w
 - **Transaction Submission**: Users can submit transactions via the Flask interface.
 - **Block Creation**: Miners can validate and add blocks to the chain.
 - **Blockchain Exploration**: Users can track the current state of the blockchain through the explorer.
+- **Block Reward**: The block reward consist of an initial reward of 50 KNL per block. The reward is reduced by 25% every 250,000 blocks.
+  Amounts are denominated in KNL, divisible down to the smallest unit, the kernel (1 KNL = 10^8 kernels).
+  This geometrically decreasing reward ensures a finite total coin supply of 50 000 000 KNL
   
 ## Technologies Used
 
@@ -63,7 +62,7 @@ Before getting started, ensure you have the following installed:
 1. Clone this repository:
    ```bash
    git clone https://github.com/62nowan/Kernel.git
-   cd Noctal
+   cd Kernel
 
 2. Create a virtual environment and activate it in the terminal:
    ```bash
@@ -76,11 +75,9 @@ Before getting started, ensure you have the following installed:
 
 ## Usage
 
- 1. Run the account.py file to generate a private key and a public key:
-    ```bash
-    python account.py
+ 1. Open the config.ini file and add your ip address 
 
- 2. Add your keys to the tx.py file to enable block mining.
+ 2. Add your keys to the tx.py file to enable block mining
 
  3. Start mining using the blockchain.py file:
     ```bash
@@ -88,7 +85,7 @@ Before getting started, ensure you have the following installed:
 
  4. You can access the explorer via the URL:
     ```bash
-    http://127.0.0.1:5900
+    http://127.0.0.1:8888
 
 
 ## Versions
@@ -134,9 +131,4 @@ Before getting started, ensure you have the following installed:
 
 ---
 
-
 *nowan*
-
-
-
-
