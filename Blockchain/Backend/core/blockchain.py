@@ -26,13 +26,15 @@ RESET_DIFFICULTY_AFTER_BLOCKS = 10
 AVERAGE_MINE_TIME = AVERAGE_BLOCK_MINE_TIME * RESET_DIFFICULTY_AFTER_BLOCKS
 
 class Blockchain:
-    def __init__(self, utxos, MemPool, newBlockAvailable, secondryChain):
+    def __init__(self, utxos, MemPool, newBlockAvailable, secondryChain, localHost, localHostPort):
         self.utxos = utxos
         self.MemPool = MemPool
         self.newBlockAvailable = newBlockAvailable
         self.secondryChain = secondryChain
         self.current_target = INITIAL_TARGET
         self.bits = target_to_bits(INITIAL_TARGET)
+        self.localHost = localHost
+        self.localHostPort = localHostPort
 
     def write_on_disk(self, block):
         blockchainDB = BlockchainDB()
@@ -54,13 +56,13 @@ class Blockchain:
             portList = node.read()
 
             for port in portList:
-                if localHostPort != port:
-                    sync = syncManager(localHost, port, secondryChain = self.secondryChain)
+                if self.localHostPort != port:
+                    sync = syncManager(self.localHost, port, secondryChain = self.secondryChain)
                     try:
                         if block:
-                            sync.publishBlock(localHostPort - 1, port, block) 
+                            sync.publishBlock(self.localHostPort - 1, port, block) 
                         else:                    
-                            sync.startDownload(localHostPort - 1, port, True)
+                            sync.startDownload(self.localHostPort - 1, port, True)
                   
                     except Exception as err:
                         pass
@@ -412,38 +414,3 @@ class Blockchain:
             print(f"Current Block Height is is {BlockHeight}")
             prevBlockHash = lastBlock["BlockHeader"]["blockHash"]
             self.addBlock(BlockHeight, prevBlockHash)
-            
-if __name__ == "__main__":
-    
-    
-    config = configparser.ConfigParser()
-    config.read('config.ini')
-    localHost = config['DEFAULT']['host']
-    localHostPort = int(config['MINER']['port'])
-    simulateTX = bool(config['MINER']['simulateTX'])
-    webport = int(config['Webhost']['port'])
-
-    with Manager() as manager:
-        utxos = manager.dict()
-        MemPool = manager.dict()
-        newBlockAvailable = manager.dict()
-        secondryChain = manager.dict()
-        
-        webapp = Process(target=main, args=(utxos, MemPool, webport, localHostPort))
-        webapp.start()
-        
-        """ Start Server and Listen for miner requests """
-        sync = syncManager(localHost, localHostPort, newBlockAvailable, secondryChain, MemPool)
-        startServer = Process(target = sync.spinUpTheServer)
-        startServer.start()
-
-        blockchain = Blockchain(utxos, MemPool, newBlockAvailable, secondryChain)
-        blockchain.startSync()
-        blockchain.buildUTXOS()
-
-        if simulateTX:
-           autoBroadcastTxs = Process(target = autoBroadcast)
-           autoBroadcastTxs.start()
-
-        blockchain.settargetWhileBooting()
-        blockchain.main()
