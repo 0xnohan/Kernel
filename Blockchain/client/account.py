@@ -1,7 +1,7 @@
 import sys
 import secrets
 
-sys.path.append('/Users/linobo/Desktop/Kernel')
+sys.path.append('/Users/linobo/Desktop/Kernel') # Your path to the project
 
 from Blockchain.Backend.util.EllepticCurve import Sha256Point
 from Blockchain.Backend.util.util import hash160, hash256
@@ -72,9 +72,11 @@ class account:
 
         self.PublicAddress = prefix + result
 
-        print(f"Private Key {self.privateKey}")
-        print(f"Public Key {self.PublicAddress}")
+        #print(f"Private Key {self.privateKey}")
+        #print(f"Public Key {self.PublicAddress}")
         #print(f"Xpoint {xpoint} \n Ypoint {ypoint}")
+
+        return self.__dict__
 
 
 if __name__ == "__main__":
