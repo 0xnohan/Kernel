@@ -75,15 +75,13 @@ Before getting started, ensure you have the following installed:
 
 ## Usage
 
- 1. Open the config.ini file and add your ip address 
+ 1. Add your keys to the tx.py file to enable block mining
 
- 2. Add your keys to the tx.py file to enable block mining
-
- 3. Start mining using the blockchain.py file:
+ 2. Start mining using the blockchain.py file:
     ```bash
     python blockchain.py
 
- 4. You can access the explorer via the URL:
+ 3. You can access the explorer via the URL:
     ```bash
     http://127.0.0.1:8888
 
