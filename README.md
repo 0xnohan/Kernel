@@ -100,7 +100,7 @@ Before getting started, ensure you have the following installed:
 
 ### Previous Versions
 
-- **Kernel Version**: 1.1
+**Kernel Version**: 1.1
 - **Date**: August 2025
 
 **Changes**:
@@ -113,7 +113,7 @@ Before getting started, ensure you have the following installed:
 
 ---
 
-- **Noctal Version**: 1 - 1.3
+**Noctal Version**: 1 - 1.3
 - **Date**: March 2024 - April 2025
 
 **Changes**:
