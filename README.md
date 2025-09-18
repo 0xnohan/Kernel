@@ -90,6 +90,16 @@ Before getting started, ensure you have the following installed:
 
 ### Current Version
 
+- **Kernel Version**: 1.2
+- **Date**: September 2025
+
+**Changes**:
+- Added a client and daemon to simplify interaction with the blockchain
+- Preparing the update of the frontend explorer (The idea is to modify the Flask server to implement API routes, the frontend will be separate from the project so it could be modified separately and more deeply)
+- Minors bug fixes
+
+### Previous Versions
+
 - **Kernel Version**: 1.1
 - **Date**: August 2025
 
@@ -101,12 +111,14 @@ Before getting started, ensure you have the following installed:
 - Start managing network nodes and seed nodes
 - Security and majors bug fixes: mempool/networks/blockchain download with peers
 
-### Previous Versions
+---
 
-#### Noctal Version 1 to 1.3
-- **Date**: March 2024 - March 2025
+- **Noctal Version**: 1 - 1.3
+- **Date**: March 2024 - April 2025
+
+**Changes**:
   
-See more updates on [Noctal](https://github.com/0xnohan/Noctal) 
+ - See more updates on [Noctal](https://github.com/0xnohan/Noctal) 
 
 ---
 
