@@ -105,7 +105,9 @@ Before getting started, ensure you have the following installed:
 
 #### Noctal Version 1 to 1.3
 - **Date**: March 2024 - March 2025
-View more updates on [Noctal](https://github.com/0xnohan/Noctal) 
+  
+See more updates on [Noctal](https://github.com/0xnohan/Noctal) 
+
 ---
 
 *nowan*
