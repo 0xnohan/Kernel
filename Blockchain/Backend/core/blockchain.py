@@ -420,7 +420,7 @@ if __name__ == "__main__":
     config.read('config.ini')
     localHost = config['DEFAULT']['host']
     localHostPort = int(config['MINER']['port'])
-    simulateBTC = bool(config['MINER']['simulateBTC'])
+    simulateTX = bool(config['MINER']['simulateTX'])
     webport = int(config['Webhost']['port'])
 
     with Manager() as manager:
@@ -441,7 +441,7 @@ if __name__ == "__main__":
         blockchain.startSync()
         blockchain.buildUTXOS()
 
-        if simulateBTC:
+        if simulateTX:
            autoBroadcastTxs = Process(target = autoBroadcast)
            autoBroadcastTxs.start()
 

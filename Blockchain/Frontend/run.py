@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for
-from Blockchain.client.sendBTC import SendBTC
+from Blockchain.client.send import Send
 from Blockchain.Backend.core.Tx import Tx
 from Blockchain.Backend.core.database.database import BlockchainDB, NodeDB
 from Blockchain.Backend.util.util import encode_base58, decode_base58
@@ -416,7 +416,7 @@ def wallet():
 
             if Amount_float is not None and not message:
                 global MEMPOOL, UTXOS
-                sendCoin = SendBTC(FromAddress, ToAddress, Amount_float, UTXOS, MEMPOOL)
+                sendCoin = Send(FromAddress, ToAddress, Amount_float, UTXOS, MEMPOOL)
 
                 TxObj = sendCoin.prepareTransaction()
 

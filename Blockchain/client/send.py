@@ -6,7 +6,7 @@ from Blockchain.Backend.util.EllepticCurve import PrivateKey
 import time
 import random 
 
-class SendBTC:
+class Send:
     def __init__(self, fromAccount, toAccount, Amount_float, UTXOS, MEMPOOL):
         self.COIN = 100000000
         self.FromPublicAddress = fromAccount
