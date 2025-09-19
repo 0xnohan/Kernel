@@ -16,12 +16,12 @@ from Blockchain.client.account import account
 from Blockchain.Backend.core.database.database import AccountDB
 from Blockchain.client.send import Send
 
-
+# Create and manage the RPC server for CLI-DAEMON communication
 def rpcServer(host, rpc_port, utxos, mempool, mining_process_manager):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((host, rpc_port))
         s.listen()
-        print(f"Serveur RPC démarré et à l'écoute sur le port {rpc_port}")
+        print(f"RPC server start, listening on port {rpc_port}") 
         while True:
             conn, addr = s.accept()
             with conn:
@@ -39,18 +39,18 @@ def rpcServer(host, rpc_port, utxos, mempool, mining_process_manager):
 
                 conn.sendall(json.dumps(response).encode('utf-8'))
 
-
+ # Handle incoming RPC commands
 def handleRpcCommand(command, utxos, mempool, mining_process_manager):
     cmd = command.get('command')
     params = command.get('params', {})
     
     if cmd == 'start_miner':
         mining_process_manager['is_mining'] = True
-        return {"status": "success", "message": "Démarrage du minage..."}
+        return {"status": "success", "message": "Start mining process..."}
     
     elif cmd == 'stop_miner':
         mining_process_manager['is_mining'] = False
-        return {"status": "success", "message": "Arret du minage..."}
+        return {"status": "success", "message": "End mining process..."}
         
     elif cmd == 'create_wallet':
         acc = account()
@@ -63,14 +63,14 @@ def handleRpcCommand(command, utxos, mempool, mining_process_manager):
         tx = send_handler.prepareTransaction()
         if tx:
             mempool[tx.id()] = tx
-            # Broadcast tx to peers 
-            return {"status": "success", "message": "Transaction ajoutée à la mempool", "txid": tx.id()}
+            # add broadcast tx to peers later
+            return {"status": "success", "message": "Transaction added to mempool", "txid": tx.id()} 
         else:
-            return {"status": "error", "message": "Échec de la création de la transaction"}
+            return {"status": "error", "message": "Failed to create transaction"} 
     else:
-        return {"status": "error", "message": "Commande inconnue"}
+        return {"status": "error", "message": "Command not recognized"} 
 
-
+# Start all the processes: P2P, Web, RPC, Mining 
 def mainDaemon(args):
     config = configparser.ConfigParser()
     config.read('config.ini')
@@ -90,12 +90,12 @@ def mainDaemon(args):
         sync = syncManager(host, miner_port, new_block_available, secondary_chain, mempool)
         server_process = Process(target=sync.spinUpTheServer)
         server_process.start()
-        print(f"Serveur P2P démarré sur le port {miner_port}")
+        print(f"P2P server started on port {miner_port}") 
 
         # Process 2 Web 
         web_api_process = Process(target=web_main, args=(utxos, mempool, web_port, miner_port))
         web_api_process.start()
-        print(f"Serveur API Web démarré sur le port {web_port}")
+        print(f"API Web server started on port {web_port}")
         
         # Process 3 RPC CLI-DAEMON
         rpc_process = Process(target=rpcServer, args=(host, rpc_port, utxos, mempool, mining_process_manager))
@@ -115,17 +115,17 @@ def mainDaemon(args):
             while True:
                 is_mining = mining_process_manager.get('is_mining', False)
                 if is_mining and (mining_process is None or not mining_process.is_alive()):
-                    print("Démarrage du minage...")
+                    print("Starting mining process...")
                     mining_process = Process(target=bc.main)
                     mining_process.start()
                 elif not is_mining and (mining_process and mining_process.is_alive()):
-                    print("Arrêt du minage...")
+                    print("Stopping mining process...")
                     mining_process.terminate()
                     mining_process.join()
                     mining_process = None
                 time.sleep(2)
         except KeyboardInterrupt:
-            print("\nArrêt du daemon...")
+            print("\nShutting down...")
             server_process.terminate()
             web_api_process.terminate()
             rpc_process.terminate()
@@ -133,7 +133,7 @@ def mainDaemon(args):
                 mining_process.terminate()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Lance le daemon Kernel")
-    parser.add_argument("--mine", action="store_true", help="Démarrer le minage automatiquement")
+    parser = argparse.ArgumentParser(description="Kernel Daemon")
+    parser.add_argument("--mine", action="store_true", help="Start mining on launch")
     args = parser.parse_args()
     mainDaemon(args)
