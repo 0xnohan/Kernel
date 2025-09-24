@@ -81,7 +81,7 @@ def main():
             print("Invalid choice. Please try again...")
         
         if response and response != {}:
-             print(f"\n[DAEMON LOG] -> {response.get('message', 'No message')}")
+             print(f"\n[DAEMON] -> {response.get('message', 'No message')}")
 
         input("\nPress Enter to continue...")
         clearScreen()
