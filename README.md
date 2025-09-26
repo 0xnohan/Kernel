@@ -61,7 +61,7 @@ Before getting started, ensure you have the following installed:
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/62nowan/Kernel.git
+   git clone https://github.com/0xnohan/Kernel.git
    cd Kernel
 
 2. Create a virtual environment and activate it in the terminal:
@@ -75,13 +75,17 @@ Before getting started, ensure you have the following installed:
 
 ## Usage
 
- 1. Open the config.ini file and add your ip address 
+ 1. Open the config.ini file and add your ip address, miner port and webport (or run with 127.0.0.1)
 
  2. Add your keys to the tx.py file to enable block mining
 
- 3. Start mining using the blockchain.py file:
+ 3. Start the Deamon:
     ```bash
-    python blockchain.py
+    python KernelD.py
+    
+ 4. Start the Client and follow the instructions:
+    ```bash
+    python KernelCLI.py
 
  4. You can access the explorer via the URL:
     ```bash
@@ -92,7 +96,20 @@ Before getting started, ensure you have the following installed:
 
 ### Current Version
 
-- **Kernel Version**: 1.1
+- **Kernel Version**: 1.2
+- **Date**: September 2025
+
+**Changes**:
+- Add a Client & Deamon to simplify future implementations and the development of the node/network system
+- Architecture change when launching the daemon
+- Preparing to modify the run.py file for API routes
+- Ability to create a wallet and send coins directly from the CLI
+- Minors bug fixes
+
+### Previous Versions
+
+
+#### Kernel 1.1
 - **Date**: August 2025
 
 **Changes**:
@@ -103,7 +120,6 @@ Before getting started, ensure you have the following installed:
 - Start managing network nodes and seed nodes
 - Security and majors bug fixes: mempool/networks/blockchain download with peers
 
-### Previous Versions
 
 #### Noctal Version 1 to 1.3
 - **Date**: March 2024 - March 2025
