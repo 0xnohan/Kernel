@@ -121,30 +121,13 @@ Before getting started, ensure you have the following installed:
 - Security and majors bug fixes: mempool/networks/blockchain download with peers
 
 
-#### Noctal Version 1 to 1.3
+#### Noctal Version 1 
 - **Date**: March 2024 - March 2025
 
 **Changes**:
 
-- Final implementation of the blockchain with a Proof-of-Work consensus mechanism.
-- Development of the Flask user interface for interacting with the blockchain: addition of transaction pages, block details, and full chain exploration.
-- Establishment of the project foundations with clearer comments and code structure.
-- Creation of a P2P network prototype.
-- Setup of a local server and request handling.
-- Synchronization of requests and sending of blockchain data files to miners. (Time synchronization issues to be resolved).
-
-- Initial blockchain prototype: block mining, block visualization, address visualization, etc.
-- First draft of the Flask user interface for chain visualization.
-- Creation of the transaction principle, memory pool, pending transactions, and removal of spent transactions.
-- Implementation of transaction signing and verification.
-- Addition of transaction fees, autonomous adjustment of mining difficulty, and block size calculation.
-
-- Creation of the repository and basic project structure.
-- Implementation of a simple block model in a JSON file with basic hashing functions.
-- First version without a user interface, only blockchain logic in Python via the terminal.
-- Implementation of addresses along with private and public keys.
-- Storage of data on disk.
+- View all changes -> [Noctal V1](https://github.com/62nohan/Kernel)
 
 ---
 
-*nowan*
+*nohan*
