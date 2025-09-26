@@ -126,7 +126,7 @@ Before getting started, ensure you have the following installed:
 
 **Changes**:
 
-- View all changes -> [Noctal V1](https://github.com/62nohan/Kernel)
+- View all changes -> [Noctal V1](https://github.com/0xnohan/Noctal)
 
 ---
 
