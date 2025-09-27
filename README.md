@@ -61,7 +61,7 @@ Before getting started, ensure you have the following installed:
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/62nowan/Kernel.git
+   git clone https://github.com/0xnohan/Kernel.git
    cd Kernel
 
 2. Create a virtual environment and activate it in the terminal:
@@ -75,13 +75,17 @@ Before getting started, ensure you have the following installed:
 
 ## Usage
 
- 1. Open the config.ini file and add your ip address 
+ 1. Open the config.ini file and add your ip address, miner port and webport (or run with 127.0.0.1)
 
  2. Add your keys to the tx.py file to enable block mining
 
- 3. Start mining using the blockchain.py file:
+ 3. Start the Deamon:
     ```bash
-    python blockchain.py
+    python KernelD.py
+    
+ 4. Start the Client and follow the instructions:
+    ```bash
+    python KernelCLI.py
 
  4. You can access the explorer via the URL:
     ```bash
@@ -92,7 +96,20 @@ Before getting started, ensure you have the following installed:
 
 ### Current Version
 
-- **Kernel Version**: 1.1
+- **Kernel Version**: 1.2
+- **Date**: September 2025
+
+**Changes**:
+- Add a Client & Deamon to simplify future implementations and the development of the node/network system
+- Architecture change when launching the daemon
+- Preparing to modify the run.py file for API routes
+- Ability to create a wallet and send coins directly from the CLI
+- Minors bug fixes
+
+### Previous Versions
+
+
+#### Kernel 1.1
 - **Date**: August 2025
 
 **Changes**:
@@ -103,32 +120,14 @@ Before getting started, ensure you have the following installed:
 - Start managing network nodes and seed nodes
 - Security and majors bug fixes: mempool/networks/blockchain download with peers
 
-### Previous Versions
 
-#### Noctal Version 1 to 1.3
+#### Noctal Version 1 
 - **Date**: March 2024 - March 2025
 
 **Changes**:
 
-- Final implementation of the blockchain with a Proof-of-Work consensus mechanism.
-- Development of the Flask user interface for interacting with the blockchain: addition of transaction pages, block details, and full chain exploration.
-- Establishment of the project foundations with clearer comments and code structure.
-- Creation of a P2P network prototype.
-- Setup of a local server and request handling.
-- Synchronization of requests and sending of blockchain data files to miners. (Time synchronization issues to be resolved).
-
-- Initial blockchain prototype: block mining, block visualization, address visualization, etc.
-- First draft of the Flask user interface for chain visualization.
-- Creation of the transaction principle, memory pool, pending transactions, and removal of spent transactions.
-- Implementation of transaction signing and verification.
-- Addition of transaction fees, autonomous adjustment of mining difficulty, and block size calculation.
-
-- Creation of the repository and basic project structure.
-- Implementation of a simple block model in a JSON file with basic hashing functions.
-- First version without a user interface, only blockchain logic in Python via the terminal.
-- Implementation of addresses along with private and public keys.
-- Storage of data on disk.
+- View all changes -> [Noctal V1](https://github.com/0xnohan/Noctal)
 
 ---
 
-*nowan*
+*nohan*

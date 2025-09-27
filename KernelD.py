@@ -11,7 +11,8 @@ sys.path.append(os.getcwd())
 
 from Blockchain.Backend.core.blockchain import Blockchain
 from Blockchain.Backend.core.network.syncManager import syncManager
-from Blockchain.Frontend.run import main as web_main
+#from Blockchain.Frontend.run import main as web_main
+from Blockchain.Frontend.api import main as web_main
 from Blockchain.client.account import account
 from Blockchain.Backend.core.database.database import AccountDB
 from Blockchain.client.send import Send

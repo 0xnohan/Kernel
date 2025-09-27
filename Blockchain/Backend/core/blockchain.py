@@ -10,7 +10,8 @@ from Blockchain.Backend.util.util import hash256, merkle_root, target_to_bits, b
 from Blockchain.Backend.core.database.database import BlockchainDB, NodeDB
 from Blockchain.Backend.core.Tx import CoinbaseTx, Tx
 from multiprocessing import Process, Manager
-from Blockchain.Frontend.run import main
+#from Blockchain.Frontend.run import main
+from Blockchain.Frontend.api import main
 from Blockchain.Backend.core.network.syncManager import syncManager
 from Blockchain.client.autoBroadcastTX import autoBroadcast
 import time
