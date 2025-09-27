@@ -103,6 +103,28 @@ def get_miner_address(block):
             return "Error Reading Miner Address"
     return "N/A"
 
+@app.route('/api/stats')
+def get_stats():
+    blocks_db = read_blockchain_db()
+    active_addresses = set()
+    total_transactions = 0
+    network_hashrate = "N/A"
+
+    if blocks_db:
+        for block in blocks_db:
+            total_transactions += block.get('Txcount', 0)
+            for tx in block.get("Txs", []):
+                for tx_out in tx.get("tx_outs", []):
+                    try:
+                        active_addresses.add(tx_out['script_pubkey']['cmds'][2])
+                    except (IndexError, KeyError, TypeError, ValueError):
+                        continue
+
+    return jsonify({
+        "total_transactions": total_transactions,
+        "active_addresses": len(active_addresses),
+        "network_hashrate": network_hashrate
+    })
 
 
 @app.route('/api/blocks')
