@@ -78,7 +78,7 @@ class Blockchain:
 
     def remove_spent_Transactions(self):
         if not hasattr(self, 'remove_spent_transactions') or not self.remove_spent_transactions:
-             return 
+            return 
 
         print(f"DEBUG: Processing {len(self.remove_spent_transactions)} spent outputs to remove from UTXOS.")
         spent_outputs_to_process = self.remove_spent_transactions[:]

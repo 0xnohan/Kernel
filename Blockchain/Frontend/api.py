@@ -283,6 +283,7 @@ def get_address_details(public_address):
                 address_transactions.append({
                     "hash": tx_id,
                     "block_height": block.get("Height"),
+                    "block_hash": block.get("BlockHeader", {}).get("blockHash"),
                     "timestamp": datetime.fromtimestamp(block.get("BlockHeader", {}).get('timestamp', 0)).isoformat() + "Z",
                     "from": list(from_addresses),
                     "to": to_addresses,
@@ -385,6 +386,36 @@ def get_mempool():
                 continue
             
     return jsonify(formatted_txs)
+
+
+@app.route('/api/search/<query>')
+def search_blockchain(query):
+    blocks_db = read_blockchain_db()
+    if not blocks_db:
+        return jsonify({"found": False})
+
+    try:
+        decode_base58(query)
+        return jsonify({"found": True, "type": "address", "identifier": query})
+    except Exception:
+        pass 
+
+    if query.isdigit():
+        block_height_query = int(query)
+        for block in blocks_db:
+            if block.get("Height") == block_height_query:
+                block_hash = block.get("BlockHeader", {}).get("blockHash")
+                return jsonify({"found": True, "type": "block", "identifier": block_hash})
+
+    if len(query) == 64:
+        for block in blocks_db:
+            if block.get("BlockHeader", {}).get("blockHash") == query:
+                return jsonify({"found": True, "type": "block", "identifier": query})
+            for tx in block.get("Txs", []):
+                if tx.get("TxId") == query:
+                    return jsonify({"found": True, "type": "transaction", "identifier": query})
+
+    return jsonify({"found": False})
 
 def main(utxos, MemPool, port, localPort):
     global UTXOS
