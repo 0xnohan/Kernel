@@ -10,7 +10,7 @@ from Blockchain.Backend.util.util import hash256, merkle_root, target_to_bits, b
 from Blockchain.Backend.core.database.database import BlockchainDB, NodeDB
 from Blockchain.Backend.core.Tx import CoinbaseTx, Tx
 from multiprocessing import Process, Manager
-from Blockchain.Frontend.run import main
+from Blockchain.API.serverAPI import main
 from Blockchain.Backend.core.network.syncManager import syncManager
 from Blockchain.client.autoBroadcastTX import autoBroadcast
 import time
@@ -77,7 +77,7 @@ class Blockchain:
 
     def remove_spent_Transactions(self):
         if not hasattr(self, 'remove_spent_transactions') or not self.remove_spent_transactions:
-             return 
+            return 
 
         print(f"DEBUG: Processing {len(self.remove_spent_transactions)} spent outputs to remove from UTXOS.")
         spent_outputs_to_process = self.remove_spent_transactions[:]

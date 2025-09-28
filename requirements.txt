@@ -16,3 +16,4 @@ urllib3
 Werkzeug
 customtkinter
 socketio
+flask-cors
