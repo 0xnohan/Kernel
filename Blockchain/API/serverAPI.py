@@ -8,68 +8,91 @@ from Blockchain.Backend.core.database.database import BlockchainDB
 from Blockchain.Backend.util.util import encode_base58, decode_base58
 
 app = Flask(__name__)
-CORS(app) 
-main_prefix = b'\x6c'
+CORS(app)
+MAIN_PREFIX = b'\x6c'
 COIN = 100000000
 MEMPOOL = {}
+UTXOS = {}
+BLOCKCHAIN_CACHE = {
+    "blocks": None,
+    "last_update": 0
+}
+CACHE_TIMEOUT = 10 
 
+
+# ==============================================================================
+
+# Store blockchain data in memory for quick access
+def get_blockchain_data():
+    global BLOCKCHAIN_CACHE
+    now = time.time()
+    if not BLOCKCHAIN_CACHE["blocks"] or (now - BLOCKCHAIN_CACHE["last_update"]) > CACHE_TIMEOUT:
+        try:
+            blockchain_db = BlockchainDB()
+            blocks = blockchain_db.read()
+            if blocks:
+                BLOCKCHAIN_CACHE["blocks"] = blocks
+                BLOCKCHAIN_CACHE["last_update"] = now
+        except Exception as e:
+            app.logger.error(f"Error while fetching blockchain data: {e}")
+            return BLOCKCHAIN_CACHE["blocks"] if BLOCKCHAIN_CACHE["blocks"] else []
+            
+    return BLOCKCHAIN_CACHE["blocks"]
+
+# encode a public key hash to a Base58Check address
 def encode_base58_checksum(h160_bytes):
-    payload = main_prefix + h160_bytes
+    payload = MAIN_PREFIX + h160_bytes
     checksum = hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4]
     full_payload = payload + checksum
     return encode_base58(full_payload)
 
-def read_blockchain_db():
-    try:
-        blockchain_db = BlockchainDB()
-        blocks = blockchain_db.read()
-        return blocks if blocks else []
-    except Exception as e:
-        app.logger.error(f"Error reading database: {e}")
-        return []
-
+# Find a transaction in a list of blocks by its ID
 def find_transaction_in_blocks(tx_id, blocks):
+    if not blocks: return None
     for block in blocks:
         for tx in block.get("Txs", []):
             if tx.get("TxId") == tx_id:
                 return tx
     return None
 
-def format_transaction_details(tx, block, all_blocks):
+# Format transaction details for API response
+def format_transaction_details(tx, block, blocks):
     tx_id = tx.get("TxId")
-
     total_in = 0
-    from_addresses = []
+    from_addresses = set()
+
     for inp in tx.get("tx_ins", []):
         if inp.get("prev_tx") == '00' * 32:
-            from_addresses.append("Coinbase")
+            from_addresses.add("Coinbase")
             continue
-        prev_tx_data = find_transaction_in_blocks(inp.get("prev_tx"), all_blocks)
+        prev_tx_data = find_transaction_in_blocks(inp.get("prev_tx"), blocks)
+
         if prev_tx_data:
             try:
                 spent_output = prev_tx_data['tx_outs'][inp.get("prev_index")]
                 total_in += spent_output.get('amount', 0)
                 h160_bytes = bytes.fromhex(spent_output['script_pubkey']['cmds'][2])
-                from_addresses.append(encode_base58_checksum(h160_bytes))
+                from_addresses.add(encode_base58_checksum(h160_bytes))
+
             except (IndexError, KeyError, ValueError, TypeError):
-                from_addresses.append("Error")
+                from_addresses.add("Error")
 
-    total_out = 0
-    to_addresses = []
+    total_out = sum(out.get('amount', 0) for out in tx.get("tx_outs", []))
+    to_addresses_details = []
     sent_value = 0
-    unique_from_addresses = set(from_addresses)
-
+    
     for out in tx.get("tx_outs", []):
-        amount = out.get('amount', 0)
-        total_out += amount
         try:
             h160_bytes = bytes.fromhex(out['script_pubkey']['cmds'][2])
             recipient_address = encode_base58_checksum(h160_bytes)
-            to_addresses.append(recipient_address)
-            if recipient_address not in unique_from_addresses:
+            amount = out.get('amount', 0)
+            to_addresses_details.append({"address": recipient_address, "amount": amount / COIN})
+
+            if recipient_address not in from_addresses:
                 sent_value += amount
+
         except (IndexError, KeyError, ValueError, TypeError):
-            to_addresses.append("Error")
+            to_addresses_details.append({"address": "Error", "amount": out.get('amount', 0) / COIN})
 
     if "Coinbase" in from_addresses:
         fee = 0
@@ -82,34 +105,48 @@ def format_transaction_details(tx, block, all_blocks):
         "hash": tx_id,
         "block_height": block.get("Height"),
         "block_hash": block.get("BlockHeader", {}).get("blockHash"),
-        "from": list(set(from_addresses)),
-        "to": to_addresses,
+        "from": list(from_addresses),
+        "to": [item['address'] for item in to_addresses_details], 
         "value": value / COIN,
         "fee": fee / COIN,
         "status": "success"
     }
 
+# Extract miner address from coinbase transaction of a block
 def get_miner_address(block):
     if not block or not block.get('Txs'):
         return "N/A"
     
     coinbase_tx = block['Txs'][0]
-    if coinbase_tx['tx_ins'][0]['prev_tx'] == '00' * 32:
+    if coinbase_tx.get('tx_ins', [{}])[0].get('prev_tx') == '00' * 32:
         try:
             h160_hex = coinbase_tx['tx_outs'][0]['script_pubkey']['cmds'][2]
             h160_bytes = bytes.fromhex(h160_hex)
             return encode_base58_checksum(h160_bytes)
+        
         except (IndexError, KeyError, TypeError, ValueError):
             return "Error Reading Miner Address"
+        
     return "N/A"
 
+
+# ==============================================================================
+
+""" API ENDPOINTS TO INTERACT WITH THE BLOCKCHAIN
+
+    Each endpoint returns JSON data suitable for frontend
+    Feel free to expand with more endpoints as needed
+    Don't forget to download the Kernel Explorer or create your own frontend to use this API
+    https://github.com/0xnohan/KernelExplorer
+"""
+
+# get stats about the blockchain
 @app.route('/api/stats')
 def get_stats():
-    blocks_db = read_blockchain_db()
+    blocks_db = get_blockchain_data()
     active_addresses = set()
     total_transactions = 0
-    network_hashrate = "N/A"
-
+    
     if blocks_db:
         for block in blocks_db:
             total_transactions += block.get('Txcount', 0)
@@ -123,23 +160,25 @@ def get_stats():
     return jsonify({
         "total_transactions": total_transactions,
         "active_addresses": len(active_addresses),
-        "network_hashrate": network_hashrate
+        "network_hashrate": "N/A"
     })
 
-
+# Get blocks list of the blockchain
 @app.route('/api/blocks')
 def get_blocks():
-    blocks_db = read_blockchain_db()
+    blocks_db = get_blockchain_data()
+    if not blocks_db:
+        return jsonify([])
+        
     formatted_blocks = []
     for block in reversed(blocks_db):
         header = block.get("BlockHeader", {})
-        block_size = block.get("Blocksize", 0)
-        block_size_used = (block_size / 1000000) * 100
+        block_size_used = (block.get("Blocksize", 0) / 1000000) * 100
 
         formatted_blocks.append({
             "height": block.get("Height"),
             "hash": header.get("blockHash"),
-            "timestamp": datetime.fromtimestamp(header.get('timestamp', 0)).isoformat() + "Z",
+            "timestamp": datetime.fromtimestamp(header.get('timestamp', 0), timezone.utc).isoformat(),
             "transaction_count": block.get("Txcount"),
             "miner": get_miner_address(block),
             "size_used": block_size_used,
@@ -147,10 +186,13 @@ def get_blocks():
         })
     return jsonify(formatted_blocks)
 
+# Get block details by its hash
 @app.route('/api/block/<block_hash>')
 def get_block_details(block_hash):
-    blocks_db = read_blockchain_db()
-    
+    blocks_db = get_blockchain_data()
+    if not blocks_db:
+        return jsonify({"error": "Blockchain is empty"}), 404
+        
     for block in blocks_db:
         header = block.get("BlockHeader", {})
         if header.get("blockHash") == block_hash:
@@ -171,7 +213,7 @@ def get_block_details(block_hash):
                                     h160_bytes = bytes.fromhex(h160_hex)
                                     sender_address = encode_base58_checksum(h160_bytes)
                                 except (IndexError, KeyError, TypeError, ValueError):
-                                    sender_address = "Error reading address"
+                                    sender_address = "Erreur while reading address"
                             inputs.append({"address": sender_address})
 
                     outputs = []
@@ -185,12 +227,7 @@ def get_block_details(block_hash):
                                 outputs.append({"address": address, "amount": amount})
                             except (IndexError, KeyError, TypeError, ValueError):
                                 continue
-
-                    formatted_txs.append({
-                        "hash": tx.get("TxId"),
-                        "inputs": inputs,
-                        "outputs": outputs
-                    })
+                    formatted_txs.append({"hash": tx.get("TxId"), "inputs": inputs, "outputs": outputs})
             
             return jsonify({
                 "block_number": block.get("Height"),
@@ -202,25 +239,89 @@ def get_block_details(block_hash):
                 "size": block.get("Blocksize"),
                 "merkle_root": header.get("merkleRoot"),
                 "nonce": header.get("nonce"),
-                "timestamp": datetime.fromtimestamp(header.get('timestamp', 0)).isoformat() + "Z",
+                "timestamp": datetime.fromtimestamp(header.get('timestamp', 0), timezone.utc).isoformat(),
                 "transactions": formatted_txs,
                 "reward": 50
             })
             
-    return jsonify({"error": "Block not found"}), 404
+    return jsonify({"error": "Bloc not found"}), 404
 
+# Get the latest 50 transactions of the blockchain
+@app.route('/api/transactions')
+def get_transactions():
+    blocks_db = get_blockchain_data()
+    all_txs = []
+    limit = 50
 
+    if not blocks_db:
+        return jsonify([])
+
+    for block in reversed(blocks_db):
+        if len(all_txs) >= limit: break
+        for tx in reversed(block.get("Txs", [])[1:]):
+            if len(all_txs) >= limit: break
+            all_txs.append(format_transaction_details(tx, block, blocks_db))
+            
+    return jsonify(all_txs)
+
+# Get transaction details by its hash
+@app.route('/api/tx/<tx_hash>')
+def get_transaction_details(tx_hash):
+    blocks_db = get_blockchain_data()
+    if not blocks_db:
+        return jsonify({"error": "Blockchain not found"}), 404
+
+    for block in blocks_db:
+        for tx in block.get("Txs", []):
+            if tx.get("TxId") == tx_hash:
+                formatted_tx = format_transaction_details(tx, block, blocks_db)
+                formatted_tx['status'] = "Confirmed"
+                formatted_tx['timestamp'] = datetime.fromtimestamp(block.get("BlockHeader", {}).get('timestamp', 0), timezone.utc).isoformat()
+                formatted_tx['confirmations'] = len(blocks_db) - block.get("Height")
+                
+                detailed_inputs = []
+                for inp in tx.get("tx_ins", []):
+                    if inp.get("prev_tx") == '00' * 32:
+                        detailed_inputs.append({"address": "Coinbase", "value": None})
+                    else:
+                        prev_tx_data = find_transaction_in_blocks(inp.get("prev_tx"), blocks_db)
+                        if prev_tx_data:
+                            try:
+                                spent_output = prev_tx_data['tx_outs'][inp.get("prev_index")]
+                                h160_bytes = bytes.fromhex(spent_output['script_pubkey']['cmds'][2])
+                                address = encode_base58_checksum(h160_bytes)
+                                value = spent_output.get('amount', 0) / COIN
+                                detailed_inputs.append({"address": address, "value": value})
+                            except (IndexError, KeyError, TypeError, ValueError): pass
+
+                detailed_outputs = []
+                for out in tx.get("tx_outs", []):
+                    try:
+                        h160_bytes = bytes.fromhex(out['script_pubkey']['cmds'][2])
+                        address = encode_base58_checksum(h160_bytes)
+                        value = out.get('amount', 0) / COIN
+                        detailed_outputs.append({"address": address, "value": value})
+                    except (IndexError, KeyError, TypeError, ValueError): pass
+                
+                formatted_tx['inputs'] = detailed_inputs
+                formatted_tx['outputs'] = detailed_outputs
+
+                return jsonify(formatted_tx)
+
+    return jsonify({"error": "Transaction not found"}), 404
+
+# Get address details and its transaction history
 @app.route('/api/address/<public_address>')
 def get_address_details(public_address):
     try:
         target_h160 = decode_base58(public_address)
-        if not target_h160:
-            raise ValueError("Invalid address format")
     except Exception as e:
-        app.logger.error(f"Error decoding address {public_address}: {e}")
-        return jsonify({"error": "Invalid address format"}), 400
+        app.logger.error(f"Error while decoding address{public_address}: {e}")
+        return jsonify({"error": "Address format invalid"}), 400
 
-    blocks_db = read_blockchain_db()
+    blocks_db = get_blockchain_data()
+    if not blocks_db:
+        return jsonify({"address": public_address, "transactions": [], "error": "Blockchain is empty"}), 404
     
     total_received_kernel = 0
     total_sent_kernel = 0
@@ -238,7 +339,7 @@ def get_address_details(public_address):
             value_in = 0
             value_out = 0
             from_addresses = set()
-            to_addresses = []
+            to_addresses_details = []
 
             for tx_in in tx.get("tx_ins", []):
                 if tx_in.get("prev_tx") == '00' * 32:
@@ -250,9 +351,7 @@ def get_address_details(public_address):
                     try:
                         spent_output = prev_tx["tx_outs"][tx_in.get("prev_index")]
                         h160_bytes = bytes.fromhex(spent_output['script_pubkey']['cmds'][2])
-                        sender_address = encode_base58_checksum(h160_bytes)
-                        from_addresses.add(sender_address)
-
+                        from_addresses.add(encode_base58_checksum(h160_bytes))
                         if h160_bytes == target_h160:
                             is_sender = True
                             value_out += spent_output.get('amount', 0)
@@ -261,11 +360,10 @@ def get_address_details(public_address):
             
             for tx_out in tx.get("tx_outs", []):
                 try:
-                    h160_bytes = bytes.fromhex(tx_out.get('script_pubkey', {}).get('cmds', [])[2])
+                    h160_bytes = bytes.fromhex(tx_out['script_pubkey']['cmds'][2])
                     receiver_address = encode_base58_checksum(h160_bytes)
                     amount = tx_out.get('amount', 0)
-                    to_addresses.append({"address": receiver_address, "amount": amount / COIN})
-
+                    to_addresses_details.append({"address": receiver_address, "amount": amount / COIN})
                     if h160_bytes == target_h160:
                         is_receiver = True
                         value_in += amount
@@ -273,22 +371,24 @@ def get_address_details(public_address):
                     continue
             
             if is_sender or is_receiver:
-                net_effect = (value_in - value_out) / COIN
-                direction = "IN" if net_effect > 0 else "OUT"
-                if is_sender:
-                    total_sent_kernel += value_out
-                if is_receiver:
-                    total_received_kernel += value_in
+                net_effect = (value_in - value_out)
+                direction = "IN" if is_receiver else "OUT"
+                if is_sender and is_receiver: 
+                    if net_effect < 0 : direction = "OUT"
+                    else: direction = "IN" 
+                
+                if is_sender: total_sent_kernel += value_out
+                if is_receiver: total_received_kernel += value_in
 
                 address_transactions.append({
                     "hash": tx_id,
                     "block_height": block.get("Height"),
                     "block_hash": block.get("BlockHeader", {}).get("blockHash"),
-                    "timestamp": datetime.fromtimestamp(block.get("BlockHeader", {}).get('timestamp', 0)).isoformat() + "Z",
+                    "timestamp": datetime.fromtimestamp(block.get("BlockHeader", {}).get('timestamp', 0), timezone.utc).isoformat(),
                     "from": list(from_addresses),
-                    "to": to_addresses,
+                    "to": to_addresses_details,
                     "direction": direction,
-                    "value": abs(net_effect)
+                    "value": abs(net_effect) / COIN
                 })
                 processed_tx_ids.add(tx_id)
 
@@ -303,94 +403,28 @@ def get_address_details(public_address):
         "transactions": sorted(address_transactions, key=lambda x: x['block_height'], reverse=True)
     })
 
-
-@app.route('/api/transactions')
-def get_transactions():
-    blocks_db = read_blockchain_db()
-    all_txs = []
-    limit = 50
-
-    if not blocks_db:
-        return jsonify([])
-
-    for block in reversed(blocks_db):
-        if len(all_txs) >= limit:
-            break
-        for tx in reversed(block.get("Txs", [])[1:]):
-            if len(all_txs) >= limit:
-                break
-            
-            formatted_tx = format_transaction_details(tx, block, blocks_db)
-            all_txs.append(formatted_tx)
-            
-    return jsonify(all_txs)
-
-
-@app.route('/api/tx/<tx_hash>')
-def get_transaction_details(tx_hash):
-    blocks_db = read_blockchain_db()
-    if not blocks_db:
-        return jsonify({"error": "Blockchain not found or empty"}), 404
-
-    for block in blocks_db:
-        for tx in block.get("Txs", []):
-            if tx.get("TxId") == tx_hash:
-                formatted_tx = format_transaction_details(tx, block, blocks_db)
-                formatted_tx['status'] = "Confirmed"
-                formatted_tx['timestamp'] = datetime.fromtimestamp(block.get("BlockHeader", {}).get('timestamp', 0)).isoformat() + "Z"
-                formatted_tx['confirmations'] = len(blocks_db) - block.get("Height")
-                detailed_inputs = []
-                for inp in tx.get("tx_ins", []):
-                    if inp.get("prev_tx") == '00' * 32:
-                        detailed_inputs.append({"address": "Coinbase", "value": None})
-                    else:
-                        prev_tx_data = find_transaction_in_blocks(inp.get("prev_tx"), blocks_db)
-                        if prev_tx_data:
-                            spent_output = prev_tx_data['tx_outs'][inp.get("prev_index")]
-                            h160_bytes = bytes.fromhex(spent_output['script_pubkey']['cmds'][2])
-                            address = encode_base58_checksum(h160_bytes)
-                            value = spent_output.get('amount', 0) / COIN
-                            detailed_inputs.append({"address": address, "value": value})
-
-                detailed_outputs = []
-                for out in tx.get("tx_outs", []):
-                    h160_bytes = bytes.fromhex(out['script_pubkey']['cmds'][2])
-                    address = encode_base58_checksum(h160_bytes)
-                    value = out.get('amount', 0) / COIN
-                    detailed_outputs.append({"address": address, "value": value})
-                
-                formatted_tx['inputs'] = detailed_inputs
-                formatted_tx['outputs'] = detailed_outputs
-
-                return jsonify(formatted_tx)
-
-    return jsonify({"error": "Transaction not found"}), 404
-
+# Get current mempool stream
 @app.route('/api/mempool')
 def get_mempool():
     formatted_txs = []
-    if MEMPOOL:
-        current_mempool = dict(MEMPOOL)
-        for tx_id, tx_obj in current_mempool.items():
-            try:
-                tx_dict = tx_obj.to_dict()
-                total_value = sum(out.get('amount', 0) for out in tx_dict.get("tx_outs", []))
-                
-                formatted_txs.append({
-                    "hash": tx_id,
-                    "value": total_value / COIN,
-                    "received_time": getattr(tx_obj, 'received_time', time.time()) 
-                })
-            except Exception as e:
-                app.logger.error(f"Error processing mempool tx {tx_id}: {e}")
-                continue
-            
+    current_mempool = dict(MEMPOOL)
+    for tx_id, tx_obj in current_mempool.items():
+        try:
+            total_value = sum(out.amount for out in tx_obj.tx_outs)
+            formatted_txs.append({
+                "hash": tx_id,
+                "value": total_value / COIN,
+                "received_time": getattr(tx_obj, 'received_time', time.time()) 
+            })
+        except Exception as e:
+            app.logger.error(f"Error while formating tx {tx_id} in mempool: {e}")
+            continue
     return jsonify(formatted_txs)
 
-
+# Search for an address, a block or a transaction
 @app.route('/api/search/<query>')
 def search_blockchain(query):
-    blocks_db = read_blockchain_db()
+    blocks_db = get_blockchain_data()
     if not blocks_db:
         return jsonify({"found": False})
 
@@ -401,15 +435,13 @@ def search_blockchain(query):
         pass 
 
     if query.isdigit():
-        block_height_query = int(query)
         for block in blocks_db:
-            if block.get("Height") == block_height_query:
-                block_hash = block.get("BlockHeader", {}).get("blockHash")
-                return jsonify({"found": True, "type": "block", "identifier": block_hash})
+            if block.get("Height") == int(query):
+                return jsonify({"found": True, "type": "block", "identifier": block["BlockHeader"]["blockHash"]})
 
     if len(query) == 64:
         for block in blocks_db:
-            if block.get("BlockHeader", {}).get("blockHash") == query:
+            if block["BlockHeader"]["blockHash"] == query:
                 return jsonify({"found": True, "type": "block", "identifier": query})
             for tx in block.get("Txs", []):
                 if tx.get("TxId") == query:
@@ -417,11 +449,13 @@ def search_blockchain(query):
 
     return jsonify({"found": False})
 
+
+# ==============================================================================
+
+# Start API SERVER with Deamon 
 def main(utxos, MemPool, port, localPort):
-    global UTXOS
-    global MEMPOOL
-    global localHostPort 
+    global UTXOS, MEMPOOL
     UTXOS = utxos
     MEMPOOL = MemPool
-    localHostPort = localPort
-    app.run(port = port)
+    get_blockchain_data()
+    app.run(port=port)
