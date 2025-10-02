@@ -78,18 +78,16 @@ Before getting started, ensure you have the following installed:
  1. Open the config.ini file and add your ip address, miner port and webport (or run with 127.0.0.1)
 
  2. Add your keys to the tx.py file to enable block mining
-
- 3. Start the Deamon:
-    ```bash
-    python KernelD.py
     
- 4. Start the Client and follow the instructions:
+ 3. Start the Client and follow the instructions:
     ```bash
     python KernelCLI.py
 
- 4. You can access the explorer via the URL:
+ 4. Download the [Kernel Explorer](https://github.com/0xnohan/KernelExplorer) & run it :
     ```bash
-    http://127.0.0.1:8888
+    npm install
+    npm run dev
+   
 
 
 ## Versions
