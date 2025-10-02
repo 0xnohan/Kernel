@@ -3,7 +3,6 @@ charset-normalizer
 click
 colorama
 Flask
-Flask-QRcode
 idna
 itsdangerous
 Jinja2

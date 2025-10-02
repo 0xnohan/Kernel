@@ -68,6 +68,11 @@ def handleRpcCommand(command, utxos, mempool, miningProcessManager):
             return {"status": "success", "message": "Transaction added to mempool", "txid": tx.id()} 
         else:
             return {"status": "error", "message": "Failed to create transaction"} 
+    
+    elif cmd == 'shutdown':
+        miningProcessManager['shutdown_requested'] = True
+        return {"status": "success", "message": "Daemon shutdown initiated."}
+    
     else:
         return {"status": "error", "message": "Command not recognized"} 
 
@@ -79,7 +84,6 @@ def mainDaemon(args):
     minerPort = int(config['MINER']['port'])
     webServerPort = int(config['Webhost']['port'])
     rpcPort = webServerPort + 1 
-    simulateTX = bool(config['MINER']['simulateTX']) 
 
     with Manager() as manager:
         utxos = manager.dict()
@@ -108,12 +112,6 @@ def mainDaemon(args):
         print("Initialisation (sync, utxos...)")
         #mainBlockchain.startSync()
         mainBlockchain.buildUTXOS()
-
-        # Auto broadcast process for testing
-        #if simulateTX: 
-        #    autobroadcastTX = Process(target= autoBroadcast())
-        #    autobroadcastTX.start()
-
         mainBlockchain.settargetWhileBooting()
         
         mining_process = None
