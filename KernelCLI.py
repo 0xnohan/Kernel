@@ -115,12 +115,16 @@ def main():
             command = {"command": "send_tx", "params": {"from": from_addr, "to": to_addr, "amount": amount}}
             response = SendRpcCommand(host, rpc_port, command)
         elif choice == '4':
-            response = SendRpcCommand(host, rpc_port, {"command": "create_wallet"})
-            if response.get("status") == 'success':
-                wallet = response.get('wallet', {})
-                print("\n--- Wallet created ---")
-                print(f"  Public Address: {wallet.get('PublicAddress')}")
-                print(f"  Private Key: {wallet.get('privateKey')}")
+            wallet_name = input("Enter a name for the new wallet: ")
+            if wallet_name:
+                response = SendRpcCommand(host, rpc_port, {"command": "create_wallet", "params": {"name": wallet_name}})
+                if response.get("status") == 'success':
+                    wallet = response.get('wallet', {})
+                    print("\n--- Wallet created ---")
+                    print(f"  Public Address: {wallet.get('PublicAddress')}")
+                    print(f"  Private Key: {wallet.get('privateKey')}")
+            else:
+                print("Wallet name is required")
         elif choice == '5':
             print("Exiting... Please close the Daemon terminal manually")
             break

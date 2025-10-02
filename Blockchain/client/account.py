@@ -87,4 +87,6 @@ if __name__ == "__main__":
         acct = account()
         wallet_data = acct.createKeys(WalletName)
         AccountDB().save_wallet(WalletName, wallet_data)
+    else:
+        print("Wallet name is required")
         

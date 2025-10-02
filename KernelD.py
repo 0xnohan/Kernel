@@ -15,7 +15,6 @@ from Blockchain.API.serverAPI import main as web_main
 from Blockchain.client.account import account
 from Blockchain.Backend.core.database.database import AccountDB
 from Blockchain.client.send import Send
-from Blockchain.client.autoBroadcastTX import autoBroadcast
 
 # Create and manage the RPC server for CLI-DAEMON communication
 def rpcServer(host, rpcPort, utxos, mempool, miningProcessManager):
@@ -54,10 +53,15 @@ def handleRpcCommand(command, utxos, mempool, miningProcessManager):
         return {"status": "success", "message": "End mining process..."}
         
     elif cmd == 'create_wallet':
+        wallet_name = params.get('name')
+        if not wallet_name:
+            return {"status": "error", "message": "Wallet name is required"}
         acc = account()
-        wallet_data = acc.createKeys()
-        AccountDB().write([wallet_data])
-        return {"status": "success", "wallet": wallet_data}
+        wallet_data = acc.createKeys(wallet_name)
+        if AccountDB().save_wallet(wallet_name, wallet_data):
+            return {"status": "success", "message": f"Wallet '{wallet_name}' created.", "wallet": wallet_data}
+        else:
+            return {"status": "error", "message": f"Wallet '{wallet_name}' already exists"}
         
     elif cmd == 'send_tx':
         send_handler = Send(params['from'], params['to'], float(params['amount']), utxos, mempool)
