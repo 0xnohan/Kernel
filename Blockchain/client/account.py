@@ -11,7 +11,7 @@ from Blockchain.Backend.core.database.database import AccountDB
 
 
 class account:
-    def createKeys(self):
+    def createKeys(self, WalletName):
         """Secp256k1 Curve Generator Points"""
         Gx = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798
         Gy = 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8
@@ -71,6 +71,8 @@ class account:
             result = BASE58_ALPHABET[mod] + result
 
         self.PublicAddress = prefix + result
+        self.WalletName = WalletName
+
 
         #print(f"Private Key {self.privateKey}")
         #print(f"Public Key {self.PublicAddress}")
@@ -80,6 +82,9 @@ class account:
 
 
 if __name__ == "__main__":
-    acct = account()
-    acct.createKeys()
-    AccountDB().write([acct.__dict__])
+    WalletName= input("Enter a name for your new wallet: ")
+    if WalletName:
+        acct = account()
+        wallet_data = acct.createKeys(WalletName)
+        AccountDB().save_wallet(WalletName, wallet_data)
+        
