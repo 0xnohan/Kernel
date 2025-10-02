@@ -1,6 +1,6 @@
 # Kernel
 
-**Kernel** is a simplified implementation of a blockchain in Python, complete with a build-in explorer.  
+**Kernel** is a simplified implementation of a blockchain in Python.  
 This project is directly inspired by the consensus mechanism and chain structure of **Bitcoin**.  
 The consensus is based on the **Proof-of-Work algorithm**, where miners must solve complex cryptographic problems to validate new blocks and add them to the chain.  
 The validation process uses the SHA-256 function to ensure the integrity of each block's data. Each block contains a hash of the previous block, creating a secure and immutable chain of blocks.
@@ -9,7 +9,7 @@ By adopting this mechanism, my project simulates adding transactions to a block,
 
 ## 📝 Table of Contents
 
-- [About](#about)
+- [Architecture](#architecture)
 - [Features](#features)
 - [Technologies Used](#technologies-used)
 - [Prerequisites](#prerequisites)
@@ -18,18 +18,22 @@ By adopting this mechanism, my project simulates adding transactions to a block,
 - [Versions](#versions)
 
 ---
-## About
+## Architecture
 
-This project aims to gain experience while also demonstrating how a blockchain works from the ground up:
-- Creation and validation of blocks.
-- Implementation of a simple consensus mechanism.
-- A web interface to visualize and interact with the blockchain.
+The project is now structured around a client-daemon architecture for better modularity and extensibility:
+
+- **Kernel Daemon** (KernelD.py): The core of the system. It manages the P2P network, the mining process, the blockchain database, and exposes an API for the explorer.
+
+- **Kernel CLI** (KernelCLI.py): A command-line client that communicates with the daemon to perform actions like starting/stopping mining, creating a wallet, or sending transactions.
+
+- **API** (serverAPI.py): A Flask API that allows querying the state of the blockchain. It is designed to be used by block explorers like the Kernel Explorer.
 
 ## Features
 
-- **Transaction Submission**: Users can submit transactions via the Flask interface.
-- **Block Creation**: Miners can validate and add blocks to the chain.
-- **Blockchain Exploration**: Users can track the current state of the blockchain through the explorer.
+- **P2P Network**: Nodes can discover each other (local) and synchronize the blockchain.
+- **Proof-of-Work Mining**: Miners can validate transactions and create new blocks to earn a reward.
+- **Wallet Management**: Create addresses and send transactions directly from the command-line client.
+- **Explorer API**: Exposes endpoints to track the chain's status, and view blocks, transactions, and addresses.
 - **Block Reward**: The block reward consist of an initial reward of 50 KNL per block. The reward is reduced by 25% every 250,000 blocks.
   Amounts are denominated in KNL, divisible down to the smallest unit, the kernel (1 KNL = 10^8 kernels).
   This geometrically decreasing reward ensures a finite total coin supply of 50 000 000 KNL
@@ -37,16 +41,9 @@ This project aims to gain experience while also demonstrating how a blockchain w
 ## Technologies Used
 
 - **Python**: Main language for the blockchain logic.
-- **Flask**: Web framework for the user interface.
-- **HTML/CSS/JavaScript**: For the user interface.
-- **External Python Files**: For cryptographic calculations.
-- **Python Libraries**:
-  - `flask`
-  - `hashlib`
-  - `json`
-  - `pycryptodome`
-  - `configparser`
-  - `...`
+- **Flask**: Web framework for server API.
+- **Cryptographic Libraries**: `pycryptodome` for asymmetric cryptography and `hashlib` for hashing functions.
+- **Communication**: Native Sockets for the P2P network and RPC interface.
 
 ## Prerequisites
 
@@ -54,8 +51,7 @@ Before getting started, ensure you have the following installed:
 
 - Python 3.7 or higher
 - Pip (Python package manager)
-- A web browser
-- An IDE
+- A terminal or command prompt
 
 ## Installation
 
@@ -75,20 +71,20 @@ Before getting started, ensure you have the following installed:
 
 ## Usage
 
- 1. Open the config.ini file and add your ip address, miner port and webport (or run with 127.0.0.1)
+ 1. Open the config.ini file and add your ip address, miner port and webport (default is `127.0.0.1`,`8889` (miner), `8001` (explorer))
 
- 2. Add your keys to the tx.py file to enable block mining
+ 2. Add your keys to the `Tx.py` file to enable block mining
     
  3. Start the Client and follow the instructions:
     ```bash
     python KernelCLI.py
 
- 4. Download the [Kernel Explorer](https://github.com/0xnohan/KernelExplorer) & run it :
+ 4. For a graphical interface, use the Kernel Explorer:
+  - Download the project here: [Kernel Explorer](https://github.com/0xnohan/KernelExplorer):
+  - Run it:
     ```bash
     npm install
     npm run dev
-   
-
 
 ## Versions
 
