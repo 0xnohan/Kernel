@@ -71,7 +71,7 @@ Before getting started, ensure you have the following installed:
 
 ## Usage
 
- 1. Open the config.ini file and add your ip address, miner port and webport (default is `127.0.0.1`,`8889` (miner), `8001` (explorer))
+ 1. Open the data/config.ini file and add your ip address, miner port and webport (default is `127.0.0.1`, `8889` (miner), `8001` (explorer))
 
  2. Add your keys to the `Tx.py` file to enable block mining
     

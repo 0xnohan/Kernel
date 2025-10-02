@@ -31,7 +31,7 @@ def start_daemon(host, rpc_port):
     except (ConnectionRefusedError, socket.timeout):
         print("Starting Kernel Daemon in a new terminal...")
 
-        daemon_script_path = 'KernelD.py'
+        daemon_script_path = os.path.join('Blockchain', 'Backend', 'core', 'KernelD.py')
         current_dir = os.getcwd() 
 
         if sys.platform == "win32":
@@ -78,7 +78,8 @@ def SendRpcCommand(host, rpc_port, command):
 # Main CLI loop
 def main():
     config = configparser.ConfigParser()
-    config.read('config.ini')
+    config_path = os.path.join('data', 'config.ini')
+    config.read(config_path)
     host = config['DEFAULT']['host']
     rpc_port = int(config['Webhost']['port']) + 1
 

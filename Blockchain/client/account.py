@@ -1,7 +1,8 @@
 import sys
 import secrets
+import os
 
-sys.path.append('/Users/linobo/Desktop/Kernel') # Your path to the project
+sys.path.append(os.getcwd())
 
 from Blockchain.Backend.util.EllepticCurve import Sha256Point
 from Blockchain.Backend.util.util import hash160, hash256

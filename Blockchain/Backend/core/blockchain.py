@@ -1,18 +1,11 @@
-import sys
-
-sys.path.append('/Users/linobo/Desktop/Kernel') # Your path to the project
-
 import copy
-import configparser
 from Blockchain.Backend.core.block import Block
 from Blockchain.Backend.core.blockheader import BlockHeader
 from Blockchain.Backend.util.util import hash256, merkle_root, target_to_bits, bits_to_target
 from Blockchain.Backend.core.database.database import BlockchainDB, NodeDB
 from Blockchain.Backend.core.Tx import CoinbaseTx, Tx
 from multiprocessing import Process, Manager
-from Blockchain.API.serverAPI import main
 from Blockchain.Backend.core.network.syncManager import syncManager
-from Blockchain.client.autoBroadcastTX import autoBroadcast
 import time
 
 ZERO_HASH = "0" * 64

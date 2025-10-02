@@ -83,7 +83,8 @@ def handleRpcCommand(command, utxos, mempool, miningProcessManager):
 # Start all the processes: P2P, Web, RPC, Mining 
 def mainDaemon(args):
     config = configparser.ConfigParser()
-    config.read('config.ini')
+    config_path = os.path.join('data', 'config.ini')
+    config.read(config_path)
     host = config['DEFAULT']['host']
     minerPort = int(config['MINER']['port'])
     webServerPort = int(config['Webhost']['port'])
