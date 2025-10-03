@@ -23,7 +23,6 @@ class BlockHeader:
         nonce = s.read(4)
         return cls(version, prevBlockHash, merkleRoot, timestamp, bits, nonce)
 
-
     def serialize(self):
         result = int_to_little_endian(self.version, 4)
         prev_block_hash_bytes = self.prevBlockHash
@@ -38,9 +37,12 @@ class BlockHeader:
         result += merkle_root_bytes[::-1]
         result += int_to_little_endian(self.timestamp, 4)
         result += self.bits
-        result += int_to_little_endian(self.nonce, 4)
+        nonce_bytes = self.nonce
+        if isinstance(nonce_bytes, int):
+            nonce_bytes = int_to_little_endian(nonce_bytes, 4)
+        result += nonce_bytes
         return result
-
+    
     def to_hex(self):
         self.blockHash = self.generateBlockHash()
 

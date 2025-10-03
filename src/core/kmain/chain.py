@@ -11,6 +11,8 @@ from src.core.primitives.script import Script
 from src.core.kmain.pow import mine
 from src.database.db_manager import BlockchainDB, NodeDB
 from src.core.net.sync_manager import syncManager
+from src.core.kmain.mempool import MempoolManager
+from src.core.kmain.utxo_manager import UTXOManager
 from src.utils.serialization import (
     merkle_root,
     target_to_bits,
@@ -29,8 +31,7 @@ AVERAGE_BLOCK_MINE_TIME = 120
 RESET_DIFFICULTY_AFTER_BLOCKS = 10
 AVERAGE_MINE_TIME = AVERAGE_BLOCK_MINE_TIME * RESET_DIFFICULTY_AFTER_BLOCKS
 
-# --- Logique de CoinbaseTx (précédemment dans Tx.py) ---
-INITIAL_REWARD_SATOSHIS = 50 * 100000000
+INITIAL_REWARD_KERNELS = 50 * 100000000
 HALVING_INTERVAL = 250000
 REDUCTION_FACTOR = 0.75
 
@@ -56,7 +57,7 @@ class CoinbaseTx:
 
     def calculate_reward(self):
         reduction_periods = self.BlockHeight // HALVING_INTERVAL
-        reward_float = INITIAL_REWARD_SATOSHIS * (REDUCTION_FACTOR ** reduction_periods)
+        reward_float = INITIAL_REWARD_KERNELS * (REDUCTION_FACTOR ** reduction_periods)
         return max(0, int(reward_float))
 
     def CoinbaseTransaction(self):
@@ -72,7 +73,6 @@ class CoinbaseTx:
         coinBaseTx.TxId = coinBaseTx.id()
         return coinBaseTx
 
-# --- Classe principale de la Blockchain ---
 class Blockchain:
     def __init__(self, utxos, MemPool, newBlockAvailable, secondryChain, localHost, localHostPort):
         self.utxos = utxos
@@ -83,6 +83,8 @@ class Blockchain:
         self.bits = target_to_bits(INITIAL_TARGET)
         self.localHost = localHost
         self.localHostPort = localHostPort
+        self.mempool_manager = MempoolManager(self.MemPool, self.utxos)
+        self.utxo_manager = UTXOManager(self.utxos)
 
     def write_on_disk(self, block):
         blockchainDB = BlockchainDB()
@@ -261,10 +263,17 @@ class Blockchain:
             del self.newBlockAvailable[blockHash]
 
     def addBlock(self, BlockHeight, prevBlockHash):
-        self.addTransactionsInBlock = [] 
-        self.TxIds = [] 
-        self.fee = 0 
-        self.Blocksize = 80
+        block_data = self.mempool_manager.get_transactions_for_block()
+        self.addTransactionsInBlock = block_data["transactions"]
+        self.TxIds = block_data["tx_ids"]
+        self.fee = block_data["fees"]
+        self.Blocksize = block_data["block_size"]
+
+        spent_outputs = []
+        for tx in self.addTransactionsInBlock:
+            for tx_in in tx.tx_ins:
+                spent_outputs.append([tx_in.prev_tx, tx_in.prev_index])
+
         timestamp = int(time.time())
         coinbaseInstance = CoinbaseTx(BlockHeight)
         coinbaseTx = coinbaseInstance.CoinbaseTransaction()
@@ -277,9 +286,13 @@ class Blockchain:
 
         merkleRoot = merkle_root(self.TxIds)[::-1].hex()
         self.adjustTargetDifficulty(BlockHeight)
-        
         blockheader = BlockHeader(
-            VERSION, prevBlockHash, merkleRoot, timestamp, self.bits, nonce = 0
+            VERSION,
+            bytes.fromhex(prevBlockHash),
+            bytes.fromhex(merkleRoot),
+            timestamp,
+            self.bits,
+            nonce=0
         )
         
         competitionOver, mined_header = mine(blockheader, self.current_target, self.newBlockAvailable)
@@ -288,28 +301,27 @@ class Blockchain:
             self.LostCompetition()
         else:
             blockheader = mined_header
-            
             newBlock = Block(BlockHeight, self.Blocksize, blockheader, len(self.addTransactionsInBlock), self.addTransactionsInBlock)
-            blockheader.to_bytes()
-            block = copy.deepcopy(newBlock)
-            broadcastNewBlock = Process(target = self.BroadcastBlock, args = (block, ))
+            block_to_broadcast = copy.deepcopy(newBlock)
+            broadcastNewBlock = Process(target=self.BroadcastBlock, args=(block_to_broadcast,))
             broadcastNewBlock.start()
-            blockheader.to_hex()
-            self.remove_spent_Transactions()
-            self.remove_transactions_from_memorypool()
-            self.store_uxtos_in_cache()
-            self.convert_to_json()
+            blockheader.to_bytes()  
+            blockheader.to_hex()    
 
-            print(
-                f"Block {BlockHeight} mined successfully with Nonce value of {blockheader.nonce}"
+            self.utxo_manager.remove_spent_utxos(spent_outputs)
+            self.utxo_manager.add_new_utxos(self.addTransactionsInBlock)
+            self.mempool_manager.remove_transactions(self.TxIds)
+
+            print(f"Block {BlockHeight} mined successfully with Nonce value of {blockheader.nonce}")
+            tx_json_list = [tx.to_dict() for tx in newBlock.Txs]
+            block_to_save = Block(
+                BlockHeight,
+                self.Blocksize,
+                blockheader.__dict__,
+                len(tx_json_list),
+                tx_json_list
             )
-            self.write_on_disk(
-                [
-                    Block(
-                        BlockHeight, self.Blocksize, blockheader.__dict__, len(self.TxJson), self.TxJson
-                    ).__dict__
-                ]
-            )
+            self.write_on_disk([block_to_save.__dict__])
 
     def main(self):
         lastBlock = self.fetch_last_block()
