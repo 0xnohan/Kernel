@@ -28,7 +28,7 @@ class Send:
         return script_pubkey
 
     def getPrivateKey(self):
-        AllAccounts = AccountDB().read()
+        AllAccounts = AccountDB().get_all_wallets()
         if not AllAccounts:
              print("Error: Could not read accounts.")
              return None
