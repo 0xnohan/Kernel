@@ -1,12 +1,12 @@
-from Blockchain.Backend.core.block import Block
-from Blockchain.Backend.core.blockheader import BlockHeader
-from Blockchain.Backend.core.network.connection import Node
-from Blockchain.Backend.core.database.database import BlockchainDB, NodeDB
-from Blockchain.Backend.core.Tx import Tx
-from Blockchain.Backend.core.network.network import NetworkEnvelope, requestBlock, FinishedSending, portlist
+from src.core.primitives.block import Block
+from src.core.primitives.blockheader import BlockHeader
+from src.core.net.connection import Node
+from src.database.db_manager import BlockchainDB, NodeDB
+from src.core.primitives.transaction import Tx
+from src.core.net.protocol import NetworkEnvelope, requestBlock, FinishedSending, portlist
+from src.utils.serialization import little_endian_to_int
 from threading import Thread
 
-from Blockchain.Backend.util.util import little_endian_to_int 
 class syncManager:
     def __init__(self, host, port, newBlockAvailable = None, secondryChain = None, Mempool = None):
         self.host = host

@@ -1,7 +1,7 @@
 from base64 import encode
 from io import BytesIO
-from Blockchain.Backend.util.util import (int_to_little_endian, little_endian_to_int, hash256,
-encode_varint, read_varint)
+from src.utils.serialization import int_to_little_endian, little_endian_to_int, encode_varint, read_varint
+from src.utils.crypto_hash import hash256
 
 NETWORK_MAGIC = b'\xf9\xbe\xb4\xd9'
 FINISHED_SENDING =b'\x0a\x11\x09\x07'

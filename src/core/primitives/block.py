@@ -1,6 +1,12 @@
-from Blockchain.Backend.core.blockheader import BlockHeader
-from Blockchain.Backend.core.Tx import Tx
-from Blockchain.Backend.util.util import (little_endian_to_int, int_to_little_endian, encode_varint, read_varint)
+from src.core.primitives.blockheader import BlockHeader
+from src.core.primitives.transaction import Tx
+from src.utils.serialization import (
+    little_endian_to_int,
+    int_to_little_endian,
+    encode_varint,
+    read_varint
+)
+
 class Block:
     command = b'block'
 
