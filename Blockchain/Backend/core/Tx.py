@@ -8,25 +8,40 @@ from Blockchain.Backend.util.util import (
     hash256,
     read_varint
 )
+import configparser
+import json
+import os
 
 ZERO_HASH = b"\0" * 32
 INITIAL_REWARD_SATOSHIS = 50 * 100000000 
 HALVING_INTERVAL = 250000 
 REDUCTION_FACTOR = 0.75
-
-PRIVATE_KEY = (
-    "113001442396501572091656188728466166023896578629302126797733037000238452942598"
-)
-MINER_ADDRESS = "koMRsyvKbJ2JVvYS2ptWbC5HSY8T8YLSdS"
 SIGHASH_ALL = 1
+
+def load_miner_info():
+    try:
+        config = configparser.ConfigParser()
+        config_path = os.path.join('data', 'config.ini')
+        config.read(config_path)
+        wallet_name = config['MINING']['wallet']
+
+        wallet_path = os.path.join('data', 'wallets', f"{wallet_name}.json")
+        with open(wallet_path, 'r') as f:
+            wallet_data = json.load(f)
+        
+        return str(wallet_data['privateKey']), wallet_data['PublicAddress']
+    except (FileNotFoundError, KeyError) as e:
+        print(f"Could not load miner wallet '{wallet_name}', please check config.ini and wallet files")
+        return None, None
 
 
 class CoinbaseTx:
     def __init__(self, BlockHeight):
-        self.BlockHeight = BlockHeight #
-        self.BlockHeightInLittleEndian = int_to_little_endian(
-            BlockHeight, bytes_needed(BlockHeight)
-        )
+        self.BlockHeight = BlockHeight 
+        self.BlockHeightInLittleEndian = int_to_little_endian(BlockHeight, bytes_needed(BlockHeight))
+        self.privateKey, self.minerAddress = load_miner_info()
+
+
 
     def calculate_reward(self):
         """Calcule la récompense de bloc en fonction de la hauteur et de la réduction de 25%."""
@@ -49,7 +64,7 @@ class CoinbaseTx:
 
         tx_outs = []
         target_amount = self.calculate_reward()
-        target_h160 = decode_base58(MINER_ADDRESS)
+        target_h160 = decode_base58(self.minerAddress)
         target_script = Script.p2pkh_script(target_h160)
         tx_outs.append(TxOut(amount=target_amount, script_pubkey=target_script))
         coinBaseTx = Tx(1, tx_ins, tx_outs, 0)

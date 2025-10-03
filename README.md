@@ -70,16 +70,12 @@ Before getting started, ensure you have the following installed:
    pip install -r requirements.txt
 
 ## Usage
-
- 1. Open the config.ini file and add your ip address, miner port and webport (default is `127.0.0.1`,`8889` (miner), `8001` (explorer))
-
- 2. Add your keys to the `Tx.py` file to enable block mining
     
- 3. Start the Client and follow the instructions:
+ 1. Start the Client and follow the instructions:
     ```bash
     python KernelCLI.py
 
- 4. For a graphical interface, use the Kernel Explorer:
+ 2. For a graphical interface, use the Kernel Explorer:
   - Download the project here: [Kernel Explorer](https://github.com/0xnohan/KernelExplorer):
   - Run it:
     ```bash
