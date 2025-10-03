@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 import hashlib
 import time
 
-from Blockchain.Backend.core.database.database import BlockchainDB
-from Blockchain.Backend.util.util import encode_base58, decode_base58
+from src.database.db_manager import BlockchainDB
+from src.utils.serialization import encode_base58, decode_base58
 
 app = Flask(__name__)
 CORS(app)

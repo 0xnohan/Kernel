@@ -4,14 +4,14 @@ import os
 
 sys.path.append(os.getcwd())
 
-from Blockchain.Backend.util.EllepticCurve import Sha256Point
-from Blockchain.Backend.util.util import hash160, hash256
-from Blockchain.Backend.core.database.database import AccountDB
+from src.utils.elleptic_curve import Sha256Point
+from src.utils.crypto_hash import hash160, hash256
+from src.database.db_manager import AccountDB
 
 
 
 
-class account:
+class wallet:
     def createKeys(self, WalletName):
         """Secp256k1 Curve Generator Points"""
         Gx = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798
@@ -85,7 +85,7 @@ class account:
 if __name__ == "__main__":
     WalletName= input("Enter a name for your new wallet: ")
     if WalletName:
-        acct = account()
+        acct = wallet()
         wallet_data = acct.createKeys(WalletName)
         AccountDB().save_wallet(WalletName, wallet_data)
     else:

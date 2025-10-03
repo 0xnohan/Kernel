@@ -1,5 +1,5 @@
-from Blockchain.Backend.util.util import int_to_little_endian, encode_varint, little_endian_to_int, read_varint
-from Blockchain.Backend.util.op import OP_CODE_FUNCTION
+from src.utils.serialization import int_to_little_endian, encode_varint, little_endian_to_int, read_varint
+from src.utils.opcodes import OP_CODE_FUNCTION
 
 
 class Script:

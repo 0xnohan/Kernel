@@ -30,7 +30,7 @@ def start_daemon(host, rpc_port):
         return
     except (ConnectionRefusedError, socket.timeout):
         print("Starting Kernel Daemon in a new terminal...")
-        daemon_script_path = os.path.join('Blockchain', 'Backend', 'core', 'KernelD.py')
+        daemon_script_path = os.path.join('src', 'core', 'daemon', 'daemon.py')
         current_dir = os.getcwd()
 
         if sys.platform == "win32":

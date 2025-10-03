@@ -1,10 +1,8 @@
-from Blockchain.Backend.util.util import decode_base58
-from Blockchain.Backend.core.Script import Script
-from Blockchain.Backend.core.Tx import TxIn, TxOut, Tx
-from Blockchain.Backend.core.database.database import AccountDB
-from Blockchain.Backend.util.EllepticCurve import PrivateKey
-import time
-import random 
+from src.utils.serialization import decode_base58
+from src.core.primitives.script import Script
+from src.core.primitives.transaction import TxIn, TxOut, Tx
+from src.database.db_manager import AccountDB
+from src.utils.elleptic_curve import PrivateKey
 
 class Send:
     def __init__(self, fromAccount, toAccount, Amount_float, UTXOS, MEMPOOL):

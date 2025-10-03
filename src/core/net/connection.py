@@ -1,5 +1,5 @@
 import socket 
-from Blockchain.Backend.core.network.network import NetworkEnvelope, FINISHED_SENDING
+from src.core.net.protocol import NetworkEnvelope, FINISHED_SENDING
 
 class Node:
     def __init__(self, host, port):

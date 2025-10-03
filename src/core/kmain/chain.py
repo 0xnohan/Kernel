@@ -1,23 +1,78 @@
 import copy
-from Blockchain.Backend.core.block import Block
-from Blockchain.Backend.core.blockheader import BlockHeader
-from Blockchain.Backend.util.util import hash256, merkle_root, target_to_bits, bits_to_target
-from Blockchain.Backend.core.database.database import BlockchainDB, NodeDB
-from Blockchain.Backend.core.Tx import CoinbaseTx, Tx
-from multiprocessing import Process, Manager
-from Blockchain.Backend.core.network.syncManager import syncManager
 import time
+import configparser
+import json
+import os
+from multiprocessing import Process
+from src.core.primitives.block import Block
+from src.core.primitives.blockheader import BlockHeader
+from src.core.primitives.transaction import Tx, TxIn, TxOut
+from src.core.primitives.script import Script
+from src.core.kmain.pow import mine
+from src.database.db_manager import BlockchainDB, NodeDB
+from src.core.net.sync_manager import syncManager
+from src.utils.serialization import (
+    merkle_root,
+    target_to_bits,
+    bits_to_target,
+    int_to_little_endian,
+    bytes_needed,
+    decode_base58
+)
 
+# --- Constantes ---
 ZERO_HASH = "0" * 64
 VERSION = 1
 INITIAL_TARGET = 0x0000FFFF00000000000000000000000000000000000000000000000000000000
 MAX_TARGET = 0x0000ffff00000000000000000000000000000000000000000000000000000000
-
-
 AVERAGE_BLOCK_MINE_TIME = 120
 RESET_DIFFICULTY_AFTER_BLOCKS = 10
 AVERAGE_MINE_TIME = AVERAGE_BLOCK_MINE_TIME * RESET_DIFFICULTY_AFTER_BLOCKS
 
+# --- Logique de CoinbaseTx (précédemment dans Tx.py) ---
+INITIAL_REWARD_SATOSHIS = 50 * 100000000
+HALVING_INTERVAL = 250000
+REDUCTION_FACTOR = 0.75
+
+def load_miner_info():
+    try:
+        config = configparser.ConfigParser()
+        config_path = os.path.join('data', 'config.ini')
+        config.read(config_path)
+        wallet_name = config['MINING']['wallet']
+        wallet_path = os.path.join('data', 'wallets', f"{wallet_name}.json")
+        with open(wallet_path, 'r') as f:
+            wallet_data = json.load(f)
+        return str(wallet_data['privateKey']), wallet_data['PublicAddress']
+    except (FileNotFoundError, KeyError) as e:
+        print(f"Could not load miner wallet '{wallet_name}', please check config.ini and wallet files")
+        return None, None
+
+class CoinbaseTx:
+    def __init__(self, BlockHeight):
+        self.BlockHeight = BlockHeight
+        self.BlockHeightInLittleEndian = int_to_little_endian(BlockHeight, bytes_needed(BlockHeight))
+        self.privateKey, self.minerAddress = load_miner_info()
+
+    def calculate_reward(self):
+        reduction_periods = self.BlockHeight // HALVING_INTERVAL
+        reward_float = INITIAL_REWARD_SATOSHIS * (REDUCTION_FACTOR ** reduction_periods)
+        return max(0, int(reward_float))
+
+    def CoinbaseTransaction(self):
+        tx_ins = [TxIn(prev_tx=b"\0" * 32, prev_index=0xFFFFFFFF)]
+        tx_ins[0].script_sig.cmds.append(self.BlockHeightInLittleEndian)
+
+        target_amount = self.calculate_reward()
+        target_h160 = decode_base58(self.minerAddress)
+        target_script = Script.p2pkh_script(target_h160)
+        tx_outs = [TxOut(amount=target_amount, script_pubkey=target_script)]
+        
+        coinBaseTx = Tx(1, tx_ins, tx_outs, 0)
+        coinBaseTx.TxId = coinBaseTx.id()
+        return coinBaseTx
+
+# --- Classe principale de la Blockchain ---
 class Blockchain:
     def __init__(self, utxos, MemPool, newBlockAvailable, secondryChain, localHost, localHostPort):
         self.utxos = utxos
@@ -42,7 +97,6 @@ class Blockchain:
         prevBlockHash = ZERO_HASH
         self.addBlock(BlockHeight, prevBlockHash)
 
-    """ Start the Sync Node """
     def startSync(self, block = None):
         try:
             node = NodeDB()
@@ -62,150 +116,6 @@ class Blockchain:
                     
         except Exception as err:
             pass
-       
-    def store_uxtos_in_cache(self):
-        for tx in self.addTransactionsInBlock:
-            print(f"Transaction added {tx.TxId} ")
-            self.utxos[tx.TxId] = tx
-
-    def remove_spent_Transactions(self):
-        if not hasattr(self, 'remove_spent_transactions') or not self.remove_spent_transactions:
-            return 
-
-        print(f"DEBUG: Processing {len(self.remove_spent_transactions)} spent outputs to remove from UTXOS.")
-        spent_outputs_to_process = self.remove_spent_transactions[:]
-        self.remove_spent_transactions = [] 
-
-        for txId_bytes, output_index in spent_outputs_to_process:
-            tx_id_hex = None 
-            try:
-                if isinstance(txId_bytes, bytes):
-                    tx_id_hex = txId_bytes.hex()
-                elif isinstance(txId_bytes, str) and len(txId_bytes) == 64:
-                    tx_id_hex = txId_bytes
-                else:
-                    print(f"ERROR: Invalid type for TxId in remove_spent_transactions: {type(txId_bytes)}")
-                    continue 
-            except Exception as e:
-                 print(f"ERROR converting TxId to hex: {e}")
-                 continue 
-
-            if tx_id_hex in self.utxos:
-                try:
-                    tx_obj = self.utxos[tx_id_hex]
-
-                    if not hasattr(tx_obj, 'tx_outs') or not isinstance(tx_obj.tx_outs, list):
-                        print(f"ERROR: Entry for {tx_id_hex} in UTXOS is not a valid Tx object (Type: {type(tx_obj)})")
-                        continue
-
-                    if 0 <= output_index < len(tx_obj.tx_outs):
-                        spent_output = tx_obj.tx_outs.pop(output_index)
-                        print(f" Spent Output {output_index} (Amount: {spent_output.amount}) removed from Tx {tx_id_hex}")
-
-                
-                        if not tx_obj.tx_outs:
-                            print(f" All outputs spent for Tx {tx_id_hex}, removing entry from UTXOS.")
-                            del self.utxos[tx_id_hex]
-                        else:
-                            self.utxos[tx_id_hex] = tx_obj
-                            print(f" Tx {tx_id_hex} updated in UTXOS with remaining {len(tx_obj.tx_outs)} outputs.")
-
-                    else:
-                        print(f" Warning: Output index {output_index} out of range for Tx {tx_id_hex} (has {len(tx_obj.tx_outs)} outputs). Output might have been spent already.")
-
-                except KeyError:
-                     print(f"DEBUG: Tx {tx_id_hex} was removed concurrently, skipping removal for index {output_index}.")
-                except Exception as e:
-                     print(f" Error processing removal for Tx {tx_id_hex}, Index {output_index}: {e}")
-                     import traceback
-                     traceback.print_exc()
-
-        print("DEBUG: Finished processing spent outputs.")
-                    
-    """ Check if it is a double spending Attempt """
-    def doubleSpendingAttempt(self, tx):
-        for txin in tx.tx_ins:
-            if txin.prev_tx not in self.prevTxs and txin.prev_tx.hex() in self.utxos:
-                self.prevTxs.append(txin.prev_tx)
-            else:
-                return True
-
-    """ Read Transactions from Memory Pool"""
-    def read_transaction_from_memorypool(self):
-        self.Blocksize = 80
-        self.TxIds = []
-        self.addTransactionsInBlock = []
-        self.remove_spent_transactions = []
-        self.prevTxs = []
-        deleteTxs = []
-
-        tempMemPool = dict(self.MemPool)
-        
-        if self.Blocksize < 1000000:
-            for tx in tempMemPool:
-                if not self.doubleSpendingAttempt(tempMemPool[tx]):
-                    tempMemPool[tx].TxId = tx
-                    self.TxIds.append(bytes.fromhex(tx))
-                    self.addTransactionsInBlock.append(tempMemPool[tx])
-                    self.Blocksize += len(tempMemPool[tx].serialize())
-
-                    for spent in tempMemPool[tx].tx_ins:
-                        self.remove_spent_transactions.append([spent.prev_tx, spent.prev_index])
-                else:
-                    deleteTxs.append(tx)
-        
-        for txId in deleteTxs:
-            del self.MemPool[txId]
-
-           
-    """ Remove Transactions from Memory pool """
-    def remove_transactions_from_memorypool(self):
-        for tx in self.TxIds:
-            if tx.hex() in self.MemPool:
-                del self.MemPool[tx.hex()]
-
-    def convert_to_json(self):
-        self.TxJson = []
-        for tx in self.addTransactionsInBlock:
-            self.TxJson.append(tx.to_dict())
-
-    def calculate_fee(self):
-        self.input_amount = 0
-        self.output_amount = 0
-        """ Calculate Input Amount """
-        for TxId_index in self.remove_spent_transactions:
-            if TxId_index[0].hex() in self.utxos:
-                self.input_amount += (
-                    self.utxos[TxId_index[0].hex()].tx_outs[TxId_index[1]].amount
-                )
-
-        """ Calculate Output Amount """
-        for tx in self.addTransactionsInBlock:
-            for tx_out in tx.tx_outs:
-                self.output_amount += tx_out.amount
-
-        self.fee = self.input_amount - self.output_amount
-
-    def buildUTXOS(self):
-        allTxs = {}
-        blocks = BlockchainDB().read()
-
-        for block in blocks:
-            for tx in block['Txs']:
-                allTxs[tx['TxId']] = tx
-            
-        for block in blocks:
-            for tx in block['Txs']:
-                for txin in tx['tx_ins']:
-                    if txin['prev_tx'] != "0000000000000000000000000000000000000000000000000000000000000000":
-                        if len(allTxs[txin['prev_tx']]['tx_outs']) < 2:
-                            del allTxs[txin['prev_tx']]
-                        else:
-                            txOut = allTxs[txin['prev_tx']]['tx_outs']
-                            txOut.pop(txin['prev_index'])
-        
-        for tx in allTxs:
-            self.utxos[tx] = Tx.to_obj(allTxs[tx])
 
 
     def settargetWhileBooting(self):
@@ -351,8 +261,10 @@ class Blockchain:
             del self.newBlockAvailable[blockHash]
 
     def addBlock(self, BlockHeight, prevBlockHash):
-        self.read_transaction_from_memorypool()
-        self.calculate_fee()
+        self.addTransactionsInBlock = [] 
+        self.TxIds = [] 
+        self.fee = 0 
+        self.Blocksize = 80
         timestamp = int(time.time())
         coinbaseInstance = CoinbaseTx(BlockHeight)
         coinbaseTx = coinbaseInstance.CoinbaseTransaction()
@@ -365,16 +277,19 @@ class Blockchain:
 
         merkleRoot = merkle_root(self.TxIds)[::-1].hex()
         self.adjustTargetDifficulty(BlockHeight)
+        
         blockheader = BlockHeader(
             VERSION, prevBlockHash, merkleRoot, timestamp, self.bits, nonce = 0
         )
-        competitionOver = blockheader.mine(self.current_target, self.newBlockAvailable)
+        
+        competitionOver, mined_header = mine(blockheader, self.current_target, self.newBlockAvailable)
 
         if competitionOver:
             self.LostCompetition()
         else:
-            newBlock = Block(BlockHeight, self.Blocksize, blockheader, len(self.addTransactionsInBlock),
-                            self.addTransactionsInBlock)
+            blockheader = mined_header
+            
+            newBlock = Block(BlockHeight, self.Blocksize, blockheader, len(self.addTransactionsInBlock), self.addTransactionsInBlock)
             blockheader.to_bytes()
             block = copy.deepcopy(newBlock)
             broadcastNewBlock = Process(target = self.BroadcastBlock, args = (block, ))

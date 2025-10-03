@@ -1,7 +1,6 @@
 import os
 import json
 
-
 class BaseDB:
     def __init__(self):
         self.basepath = "data"
