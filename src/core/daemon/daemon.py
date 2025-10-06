@@ -55,6 +55,9 @@ def main():
         utxo_manager.build_utxos_from_db()
         
         mainBlockchain = Blockchain(utxos, mempool, newBlockAvailable, secondaryChain, host, p2p_port)
+        if not mainBlockchain.fetch_last_block():
+            mainBlockchain.GenesisBlock()
+            
         mainBlockchain.settargetWhileBooting()
         
         mining_process = None

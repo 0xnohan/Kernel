@@ -1,78 +1,29 @@
 import copy
 import time
-import configparser
-import json
-import os
+
 from multiprocessing import Process
 from src.core.primitives.block import Block
 from src.core.primitives.blockheader import BlockHeader
-from src.core.primitives.transaction import Tx, TxIn, TxOut
-from src.core.primitives.script import Script
-from src.core.kmain.pow import mine
+from src.core.primitives.transaction import Tx
 from src.database.db_manager import BlockchainDB, NodeDB
 from src.core.net.sync_manager import syncManager
 from src.core.kmain.mempool import MempoolManager
 from src.core.kmain.utxo_manager import UTXOManager
-from src.utils.config_loader import get_miner_wallet
-from src.utils.serialization import (
-    merkle_root,
-    target_to_bits,
-    bits_to_target,
-    int_to_little_endian,
-    bytes_needed,
-    decode_base58
+from src.core.primitives.coinbase_tx import CoinbaseTx
+
+from src.core.kmain.genesis import create_genesis_block
+from src.core.kmain.pow import mine
+from src.utils.serialization import merkle_root, target_to_bits, bits_to_target
+
+from src.core.kmain.genesis import GENESIS_BITS, GENESIS_TIMESTAMP
+from src.core.kmain.constants import (
+    VERSION, 
+    ZERO_HASH, 
+    INITIAL_TARGET, 
+    MAX_TARGET,  
+    RESET_DIFFICULTY_AFTER_BLOCKS, 
+    AVERAGE_MINE_TIME
 )
-
-ZERO_HASH = "0" * 64
-VERSION = 1
-
-INITIAL_TARGET = 0x0000FFFF00000000000000000000000000000000000000000000000000000000
-MAX_TARGET = 0x0000ffff00000000000000000000000000000000000000000000000000000000
-
-AVERAGE_BLOCK_MINE_TIME = 120
-RESET_DIFFICULTY_AFTER_BLOCKS = 10
-AVERAGE_MINE_TIME = AVERAGE_BLOCK_MINE_TIME * RESET_DIFFICULTY_AFTER_BLOCKS
-
-INITIAL_REWARD_KERNELS = 50 * 100000000
-HALVING_INTERVAL = 250000
-REDUCTION_FACTOR = 0.75
-
-def load_miner_info():
-    try:
-        wallet_name = get_miner_wallet()
-        if not wallet_name:
-            raise KeyError
-        wallet_path = os.path.join('data', 'wallets', f"{wallet_name}.json")
-        with open(wallet_path, 'r') as f:
-            wallet_data = json.load(f)
-        return str(wallet_data['privateKey']), wallet_data['PublicAddress']
-    except (FileNotFoundError, KeyError) as e:
-        print(f"Could not load miner wallet '{wallet_name}', please check config.ini and wallet files")
-        return None, None
-
-class CoinbaseTx:
-    def __init__(self, BlockHeight):
-        self.BlockHeight = BlockHeight
-        self.BlockHeightInLittleEndian = int_to_little_endian(BlockHeight, bytes_needed(BlockHeight))
-        self.privateKey, self.minerAddress = load_miner_info()
-
-    def calculate_reward(self):
-        reduction_periods = self.BlockHeight // HALVING_INTERVAL
-        reward_float = INITIAL_REWARD_KERNELS * (REDUCTION_FACTOR ** reduction_periods)
-        return max(0, int(reward_float))
-
-    def CoinbaseTransaction(self):
-        tx_ins = [TxIn(prev_tx=b"\0" * 32, prev_index=0xFFFFFFFF)]
-        tx_ins[0].script_sig.cmds.append(self.BlockHeightInLittleEndian)
-
-        target_amount = self.calculate_reward()
-        target_h160 = decode_base58(self.minerAddress)
-        target_script = Script.p2pkh_script(target_h160)
-        tx_outs = [TxOut(amount=target_amount, script_pubkey=target_script)]
-        
-        coinBaseTx = Tx(1, tx_ins, tx_outs, 0)
-        coinBaseTx.TxId = coinBaseTx.id()
-        return coinBaseTx
 
 class Blockchain:
     def __init__(self, utxos, MemPool, newBlockAvailable, secondryChain, localHost, localHostPort):
@@ -96,9 +47,22 @@ class Blockchain:
         return blockchainDB.lastBlock()
 
     def GenesisBlock(self):
-        BlockHeight = 0
-        prevBlockHash = ZERO_HASH
-        self.addBlock(BlockHeight, prevBlockHash)
+        print("Creating genesis block...")
+        genesis_block = create_genesis_block()
+
+        genesis_block.BlockHeader.to_hex() 
+        tx_json_list = [tx.to_dict() for tx in genesis_block.Txs]
+        block_to_save = {
+            "Height": genesis_block.Height,
+            "BlockSize": genesis_block.Blocksize,
+            "BlockHeader": genesis_block.BlockHeader.__dict__,
+            "TxCount": genesis_block.Txcount,
+            "Txs": tx_json_list
+        }
+        
+        blockchainDB = BlockchainDB()
+        blockchainDB.write([block_to_save])
+        print("Genesis block written to database")
 
     def startSync(self, block = None):
         try:
@@ -133,6 +97,9 @@ class Blockchain:
             timestamp = blocks[BlockHeight]['BlockHeader']['timestamp']
         else:
             block = BlockchainDB().lastBlock()
+            if not block:
+                return GENESIS_BITS.hex(), GENESIS_TIMESTAMP
+            
             bits = block['BlockHeader']['bits']
             timestamp = block['BlockHeader']['timestamp']
         return bits, timestamp
@@ -277,10 +244,8 @@ class Blockchain:
 
         timestamp = int(time.time())
         coinbaseInstance = CoinbaseTx(BlockHeight)
-        coinbaseTx = coinbaseInstance.CoinbaseTransaction()
+        coinbaseTx = coinbaseInstance.CoinbaseTransaction(fees=self.fee)
         self.Blocksize += len(coinbaseTx.serialize())
-
-        coinbaseTx.tx_outs[0].amount = coinbaseTx.tx_outs[0].amount + self.fee
 
         self.TxIds.insert(0, bytes.fromhex(coinbaseTx.id()))
         self.addTransactionsInBlock.insert(0, coinbaseTx)
@@ -305,15 +270,14 @@ class Blockchain:
             newBlock = Block(BlockHeight, self.Blocksize, blockheader, len(self.addTransactionsInBlock), self.addTransactionsInBlock)
             block_to_broadcast = copy.deepcopy(newBlock)
             broadcastNewBlock = Process(target=self.BroadcastBlock, args=(block_to_broadcast,))
-            broadcastNewBlock.start()
-            blockheader.to_bytes()  
+            broadcastNewBlock.start()  
             blockheader.to_hex()    
 
             self.utxo_manager.remove_spent_utxos(spent_outputs)
             self.utxo_manager.add_new_utxos(self.addTransactionsInBlock)
             self.mempool_manager.remove_transactions(self.TxIds)
 
-            print(f"Block {BlockHeight} mined successfully with Nonce value of {blockheader.nonce}")
+            print(f"Block {BlockHeight} mined successfully with Nonce value of {blockheader.nonce}\n")
             tx_json_list = [tx.to_dict() for tx in newBlock.Txs]
             block_to_save = Block(
                 BlockHeight,
