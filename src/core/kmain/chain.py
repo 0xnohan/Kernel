@@ -14,6 +14,7 @@ from src.core.net.sync_manager import syncManager
 from src.core.kmain.mempool import MempoolManager
 from src.core.kmain.utxo_manager import UTXOManager
 from src.utils.config_loader import get_miner_wallet
+from src.core.kmain.genesis import create_genesis_block
 from src.utils.serialization import (
     merkle_root,
     target_to_bits,
@@ -22,6 +23,8 @@ from src.utils.serialization import (
     bytes_needed,
     decode_base58
 )
+
+from src.core.kmain.genesis import GENESIS_BITS, GENESIS_TIMESTAMP
 
 ZERO_HASH = "0" * 64
 VERSION = 1
@@ -96,9 +99,22 @@ class Blockchain:
         return blockchainDB.lastBlock()
 
     def GenesisBlock(self):
-        BlockHeight = 0
-        prevBlockHash = ZERO_HASH
-        self.addBlock(BlockHeight, prevBlockHash)
+        print("Creating genesis block...")
+        genesis_block = create_genesis_block()
+
+        genesis_block.BlockHeader.to_hex() 
+        tx_json_list = [tx.to_dict() for tx in genesis_block.Txs]
+        block_to_save = {
+            "Height": genesis_block.Height,
+            "BlockSize": genesis_block.Blocksize,
+            "BlockHeader": genesis_block.BlockHeader.__dict__,
+            "TxCount": genesis_block.Txcount,
+            "Txs": tx_json_list
+        }
+        
+        blockchainDB = BlockchainDB()
+        blockchainDB.write([block_to_save])
+        print("Genesis block written to database")
 
     def startSync(self, block = None):
         try:
@@ -133,6 +149,9 @@ class Blockchain:
             timestamp = blocks[BlockHeight]['BlockHeader']['timestamp']
         else:
             block = BlockchainDB().lastBlock()
+            if not block:
+                return GENESIS_BITS.hex(), GENESIS_TIMESTAMP
+            
             bits = block['BlockHeader']['bits']
             timestamp = block['BlockHeader']['timestamp']
         return bits, timestamp
@@ -305,8 +324,7 @@ class Blockchain:
             newBlock = Block(BlockHeight, self.Blocksize, blockheader, len(self.addTransactionsInBlock), self.addTransactionsInBlock)
             block_to_broadcast = copy.deepcopy(newBlock)
             broadcastNewBlock = Process(target=self.BroadcastBlock, args=(block_to_broadcast,))
-            broadcastNewBlock.start()
-            blockheader.to_bytes()  
+            broadcastNewBlock.start()  
             blockheader.to_hex()    
 
             self.utxo_manager.remove_spent_utxos(spent_outputs)
