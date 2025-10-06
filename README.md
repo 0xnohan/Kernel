@@ -108,7 +108,7 @@ Before getting started, ensure you have the following installed:
 **Changes**:
 - Add a Client & Deamon to simplify future implementations and the development of the node/network system
 - Architecture change when launching the daemon
-- Preparing to modify the run.py file for API routes
+- Delete the run.py file for a new server API for frontend explorer
 - Ability to create a wallet and send coins directly from the CLI
 - Minors bug fixes
 
