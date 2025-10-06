@@ -28,8 +28,9 @@ def mine(block_header, target, newBlockAvailable):
         serialized_header = block_header.serialize()
         current_hash_bytes = hash256(serialized_header)
         current_hash_int = little_endian_to_int(current_hash_bytes)
-
-        print(f"Mining Started {block_header.nonce}", end="\r")
+        
+        if block_header.nonce % 10000 == 0 :
+            print(f"Nonce: {block_header.nonce} Hash:{current_hash_int:064x}", end="\r", flush=True)
 
     block_header.blockHash = current_hash_bytes[::-1].hex()
 

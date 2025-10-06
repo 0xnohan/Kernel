@@ -18,7 +18,7 @@ class Send:
         else:
             self.Amount = 0
             self.isBalanceEnough = False
-            print(f"Error: Invalid amount ({Amount_float}) passed to SendBTC.")
+            print(f"Error: Invalid amount ({Amount_float}) passed to send")
 
     def scriptPubKey(self, PublicAddress):
         h160 = decode_base58(PublicAddress)
@@ -41,7 +41,7 @@ class Send:
         self.Total = 0 
         amount_needed_kernel = self.Amount
 
-        # 1. Obtenir le script pubkey de l'expéditeur
+        # get script pubkey
         try:
             self.From_address_script_pubkey = self.scriptPubKey(self.FromPublicAddress)
             self.fromPubKeyHash = self.From_address_script_pubkey.cmds[2]
@@ -49,14 +49,13 @@ class Send:
             print(f"Error creating scriptPubKey for sender: {e}")
             self.isBalanceEnough = False
             return []
-
-        # 2. Créer l'ensemble des UTXOs déjà dépensés dans le MEMPOOL
+        
+        # Create all UTXOs already spent in mempool
         mempool_spent_utxos = set()
         try:
             current_mempool = dict(self.mempool)
             print(f"DEBUG: Checking {len(current_mempool)} transactions in mempool for spent UTXOs.")
             for txid_mem, tx_mem_obj in current_mempool.items():
-                # S'assurer que tx_mem_obj a bien des tx_ins
                 if hasattr(tx_mem_obj, 'tx_ins'):
                     for tx_in_mem in tx_mem_obj.tx_ins:
                         utxo_id = f"{tx_in_mem.prev_tx.hex()}_{tx_in_mem.prev_index}"
@@ -65,7 +64,7 @@ class Send:
         except Exception as e:
             print(f"Error processing mempool to find spent UTXOs: {e}")
 
-        # 3. Copier les UTXOs confirmés
+        # Copy UTXOs non spents
         confirmed_utxos = {}
         try:
             confirmed_utxos = dict(self.utxos)
@@ -79,7 +78,7 @@ class Send:
              self.isBalanceEnough = False
              return []
 
-        # 4. Sélectionner les UTXOs confirmés et non dépensés dans le mempool
+        # Get confirmed & non-spent UTXOs from mempool
         selected_utxo_keys_in_tx = set() 
         for tx_hex, TxObj in confirmed_utxos.items():
             if self.Total >= amount_needed_kernel:
@@ -90,10 +89,10 @@ class Send:
             for index, txout in enumerate(TxObj.tx_outs):
                 utxo_id = f"{tx_hex}_{index}"
 
-                # Vérifier si :
-                # - appartient à l'expéditeur
-                # - n'est PAS dans le set des UTXOs dépensés par le mempool
-                # - n'est PAS déjà sélectionné pour CETTE transaction
+                # Check if :
+                # - is from sender
+                # - is NOT in the set of already spent UTXOs
+                # -is NOT already selected for THIS tx
                 if hasattr(txout, 'script_pubkey') and \
                    hasattr(txout.script_pubkey, 'cmds') and \
                    len(txout.script_pubkey.cmds) > 2 and \
@@ -110,7 +109,7 @@ class Send:
                     if self.Total >= amount_needed_kernel:
                         break 
 
-        # 5. Vérification finale du solde
+        # Last check for balance
         if self.Total < amount_needed_kernel:
             self.isBalanceEnough = False
             return []
@@ -183,7 +182,7 @@ class Send:
             print("DEBUG: Transaction preparation failed in prepareTxIn (Insufficient funds or UTXO unavailable)")
             return False #
 
-        # Vérifie si assez pour montant + frais
+        # Check for amount + fees
         self.TxOuts = self.prepareTxOut()
         if not self.isBalanceEnough: 
             print("DEBUG: Transaction preparation failed in prepareTxOut (Insufficient funds for fee)")

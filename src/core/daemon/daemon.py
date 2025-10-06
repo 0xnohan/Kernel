@@ -35,22 +35,22 @@ def main():
         secondaryChain = manager.dict()
         miningProcessManager = manager.dict({'is_mining': False, 'shutdown_requested': False})
 
-        # Processus P2P
+        # P2P
         sync = syncManager(host, p2p_port, newBlockAvailable, secondaryChain, mempool)
         processServeur = Process(target=sync.spinUpTheServer)
         processServeur.start()
         print(f"P2P server started on port {p2p_port}")
 
-        # Processus API Web
+        # API
         processAPI = Process(target=web_main, args=(utxos, mempool, api_port, p2p_port))
         processAPI.start()
-        print(f"API Web server started on port {api_port}")
+        print(f"API server started on port {api_port}")
         
-        # Processus RPC (maintenant importé)
+        # RPC
         processRPC = Process(target=rpcServer, args=(host, rpc_port, utxos, mempool, miningProcessManager))
         processRPC.start()
 
-        # Initialisation de la blockchain et des UTXOs
+        # Init
         utxo_manager = UTXOManager(utxos)
         print("Initializing UTXO set...")
         utxo_manager.build_utxos_from_db()

@@ -30,7 +30,7 @@ class UTXOManager:
                     if tx_id not in self.utxos:
                         self.utxos[tx_id] = Tx.to_obj(tx_data)
                     # Si la Tx est déjà dans les utxos mais avec un autre output, on la garde
-                    # (Ce cas est rare mais possible si une Tx a plusieurs outputs non dépensés)
+                    # Possible si une Tx a plusieurs outputs non dépensés
 
         print(f"UTXO set rebuilt. Found {len(self.utxos)} unspent transactions.")
 

@@ -62,10 +62,6 @@ class MempoolManager:
         }
 
     def remove_transactions(self, tx_ids):
-        """
-        Supprime une liste de transactions de la mempool (généralement après qu'elles
-        aient été incluses dans un bloc miné).
-        """
         for tx_id_bytes in tx_ids:
             tx_id_hex = tx_id_bytes.hex()
             if tx_id_hex in self.mempool:
