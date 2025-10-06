@@ -1,20 +1,21 @@
 import copy
 import time
-import configparser
 import json
 import os
+
 from multiprocessing import Process
 from src.core.primitives.block import Block
 from src.core.primitives.blockheader import BlockHeader
 from src.core.primitives.transaction import Tx, TxIn, TxOut
 from src.core.primitives.script import Script
-from src.core.kmain.pow import mine
 from src.database.db_manager import BlockchainDB, NodeDB
 from src.core.net.sync_manager import syncManager
 from src.core.kmain.mempool import MempoolManager
 from src.core.kmain.utxo_manager import UTXOManager
+
 from src.utils.config_loader import get_miner_wallet
 from src.core.kmain.genesis import create_genesis_block
+from src.core.kmain.pow import mine
 from src.utils.serialization import (
     merkle_root,
     target_to_bits,
@@ -25,20 +26,19 @@ from src.utils.serialization import (
 )
 
 from src.core.kmain.genesis import GENESIS_BITS, GENESIS_TIMESTAMP
+from src.core.kmain.constants import (
+    VERSION, 
+    ZERO_HASH, 
+    INITIAL_TARGET, 
+    MAX_TARGET, 
+    AVERAGE_BLOCK_MINE_TIME, 
+    RESET_DIFFICULTY_AFTER_BLOCKS, 
+    AVERAGE_MINE_TIME, 
+    INITIAL_REWARD_KERNELS, 
+    HALVING_INTERVAL, 
+    REDUCTION_FACTOR
+)
 
-ZERO_HASH = "0" * 64
-VERSION = 1
-
-INITIAL_TARGET = 0x0000FFFF00000000000000000000000000000000000000000000000000000000
-MAX_TARGET = 0x0000ffff00000000000000000000000000000000000000000000000000000000
-
-AVERAGE_BLOCK_MINE_TIME = 120
-RESET_DIFFICULTY_AFTER_BLOCKS = 10
-AVERAGE_MINE_TIME = AVERAGE_BLOCK_MINE_TIME * RESET_DIFFICULTY_AFTER_BLOCKS
-
-INITIAL_REWARD_KERNELS = 50 * 100000000
-HALVING_INTERVAL = 250000
-REDUCTION_FACTOR = 0.75
 
 def load_miner_info():
     try:
