@@ -86,20 +86,33 @@ Before getting started, ensure you have the following installed:
 
 ### Current Version
 
-- **Kernel Version**: 1.2
-- **Date**: September 2025
+- **Kernel Version**: 1.30
+- **Date**: October 2025
 
 **Changes**:
-- Add a Client & Deamon to simplify future implementations and the development of the node/network system
-- Architecture change when launching the daemon
-- Preparing to modify the run.py file for API routes
-- Ability to create a wallet and send coins directly from the CLI
+- Changed the architecture of the project to split the files for better understanding
+- Added settings in the client to configure the ini file (ports, miner, host,...)
+- Added new utils files to load configurations
+- Added a mempool file and class for better mempool management
+- Split the blockchain.py file in different processes (pow, utxos_manager, mempool and chain)
+- Bug fixes for data type in blockheader
+- Renaming files and removing unused imports/packages
 - Minors bug fixes
 
 ### Previous Versions
 
 
-#### Kernel 1.1
+#### Kernel 1.23
+- **Date**: September 2025
+
+**Changes**:
+- Add a Client & Deamon to simplify future implementations and the development of the node/network system
+- Architecture change when launching the daemon
+- Delete the run.py file for a new server API for frontend explorer
+- Ability to create a wallet and send coins directly from the CLI
+- Minors bug fixes
+
+#### Kernel 1.10
 - **Date**: August 2025
 
 **Changes**:
