@@ -13,6 +13,7 @@ from src.database.db_manager import BlockchainDB, NodeDB
 from src.core.net.sync_manager import syncManager
 from src.core.kmain.mempool import MempoolManager
 from src.core.kmain.utxo_manager import UTXOManager
+from src.utils.config_loader import get_miner_wallet
 from src.utils.serialization import (
     merkle_root,
     target_to_bits,
@@ -38,10 +39,9 @@ REDUCTION_FACTOR = 0.75
 
 def load_miner_info():
     try:
-        config = configparser.ConfigParser()
-        config_path = os.path.join('data', 'config.ini')
-        config.read(config_path)
-        wallet_name = config['MINING']['wallet']
+        wallet_name = get_miner_wallet()
+        if not wallet_name:
+            raise KeyError
         wallet_path = os.path.join('data', 'wallets', f"{wallet_name}.json")
         with open(wallet_path, 'r') as f:
             wallet_data = json.load(f)

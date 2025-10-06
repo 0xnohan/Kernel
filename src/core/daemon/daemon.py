@@ -12,6 +12,7 @@ from src.core.net.sync_manager import syncManager
 from src.api.server import main as web_main 
 from src.core.daemon.rpc_server import rpcServer
 from src.core.kmain.utxo_manager import UTXOManager 
+from src.utils.config_loader import load_config
 
 
 def main():
@@ -19,9 +20,7 @@ def main():
     parser.add_argument("--mine", action="store_true", help="Start mining on launch")
     args = parser.parse_args()
 
-    config = configparser.ConfigParser()
-    config_path = os.path.join('data', 'config.ini')
-    config.read(config_path)
+    config = load_config()
     
     host = config['NETWORK']['host']
     p2p_port = int(config['P2P']['port'])

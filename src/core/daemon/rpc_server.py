@@ -73,32 +73,6 @@ def handleRpcCommand(command, utxos, mempool, miningProcessManager):
         except Exception as e:
             return {"status": "error", "message": f"Could not retrieve wallets: {e}"}
 
-    elif cmd == 'get_config':
-        config = configparser.ConfigParser()
-        config_path = os.path.join('data', 'config.ini')
-        config.read(config_path)
-        config_dict = {s: dict(config.items(s)) for s in config.sections()}
-        return {"status": "success", "config": config_dict}
-        
-    elif cmd == 'update_config':
-        config = configparser.ConfigParser()
-        config_path = os.path.join('data', 'config.ini')
-        config.read(config_path)
-        
-        section = params.get('section')
-        key = params.get('key')
-        value = params.get('value')
-        
-        if section and key and value is not None:
-            if not config.has_section(section):
-                config.add_section(section)
-            config.set(section, key, str(value))
-            with open(config_path, 'w') as configfile:
-                config.write(configfile)
-            return {"status": "success", "message": f"Config updated: [{section}] {key} = {value}"}
-        else:
-            return {"status": "error", "message": "Invalid parameters for update_config"}
-        
     elif cmd == 'shutdown':
         miningProcessManager['shutdown_requested'] = True
         return {"status": "success", "message": "Daemon shutdown initiated"}
@@ -106,7 +80,6 @@ def handleRpcCommand(command, utxos, mempool, miningProcessManager):
     else:
         return {"status": "error", "message": f"Command '{cmd}' not recognized"}
 
-# --- Serveur RPC (de KernelD.py) ---
 def rpcServer(host, rpcPort, utxos, mempool, miningProcessManager):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((host, rpcPort))

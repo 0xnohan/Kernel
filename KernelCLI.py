@@ -5,6 +5,7 @@ import configparser
 import subprocess
 import time
 import sys
+from src.utils.config_loader import load_config, update_config, get_config_dict
 
 def clearScreen():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -75,13 +76,7 @@ def SendRpcCommand(host, rpc_port, command):
 
 def settings(host, rpc_port):
     while True:
-        config_response = SendRpcCommand(host, rpc_port, {"command": "get_config"})
-        if config_response.get('status') != 'success':
-            print("Could not load current configuration.")
-            input("\nPress Enter to continue...")
-            return
-        
-        current_config = config_response.get('config', {})
+        current_config = get_config_dict()
         
         clearScreen()
         printLogo()
@@ -104,16 +99,16 @@ def settings(host, rpc_port):
         response = {}
         if choice == '1':
             new_host = input(f"Enter new host IP (current: {c_host}): ") or c_host
-            command = {"command": "update_config", "params": {"section": "NETWORK", "key": "host", "value": new_host}}
-            response = SendRpcCommand(host, rpc_port, command)
+            update_config("NETWORK", "host", new_host)
+            response = {"message": "Host IP updated"}
         elif choice == '2':
             new_port = input(f"Enter new P2P port (current: {c_p2p_port}): ") or c_p2p_port
-            command = {"command": "update_config", "params": {"section": "P2P", "key": "port", "value": new_port}}
-            response = SendRpcCommand(host, rpc_port, command)
+            update_config("P2P", "port", new_port)
+            response = {"message": "P2P port updated"}
         elif choice == '3':
             new_port = input(f"Enter new API port (current: {c_api_port}): ") or c_api_port
-            command = {"command": "update_config", "params": {"section": "API", "key": "port", "value": new_port}}
-            response = SendRpcCommand(host, rpc_port, command)
+            update_config("API", "port", new_port)
+            response = {"message": "API port updated"}
         elif choice == '4':
             wallets_response = SendRpcCommand(host, rpc_port, {"command": "get_wallets"})
             if wallets_response.get('status') == 'success' and wallets_response.get('wallets'):
@@ -129,8 +124,8 @@ def settings(host, rpc_port):
                         wallet_choice = int(wallet_choice_str) - 1
                         if 0 <= wallet_choice < len(wallets):
                             selected_wallet_name = wallets[wallet_choice]['WalletName']
-                            command = {"command": "update_config", "params": {"section": "MINING", "key": "wallet", "value": selected_wallet_name}}
-                            response = SendRpcCommand(host, rpc_port, command)
+                            update_config("MINING", "wallet", selected_wallet_name)
+                            response = {"message": "Miner wallet updated"}
                         else:
                             response = {"message": "Invalid selection."}
                 except ValueError:
@@ -147,9 +142,7 @@ def settings(host, rpc_port):
 
 # Main CLI loop
 def main():
-    config = configparser.ConfigParser()
-    config_path = os.path.join('data', 'config.ini')
-    config.read(config_path)
+    config = load_config()
     host = config['NETWORK']['host']
     rpc_port = int(config['API']['port']) + 1
 
@@ -214,7 +207,7 @@ def main():
                 response = {"message": "Wallet name cannot be empty"}
         elif choice == '5':
             settings(host, rpc_port)
-            config.read(config_path)
+            config = load_config()
             host = config['NETWORK']['host']
             rpc_port = int(config['API']['port']) + 1
             continue
