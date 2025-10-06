@@ -244,10 +244,8 @@ class Blockchain:
 
         timestamp = int(time.time())
         coinbaseInstance = CoinbaseTx(BlockHeight)
-        coinbaseTx = coinbaseInstance.CoinbaseTransaction()
+        coinbaseTx = coinbaseInstance.CoinbaseTransaction(fees=self.fee)
         self.Blocksize += len(coinbaseTx.serialize())
-
-        coinbaseTx.tx_outs[0].amount = coinbaseTx.tx_outs[0].amount + self.fee
 
         self.TxIds.insert(0, bytes.fromhex(coinbaseTx.id()))
         self.addTransactionsInBlock.insert(0, coinbaseTx)
@@ -279,7 +277,7 @@ class Blockchain:
             self.utxo_manager.add_new_utxos(self.addTransactionsInBlock)
             self.mempool_manager.remove_transactions(self.TxIds)
 
-            print(f"Block {BlockHeight} mined successfully with Nonce value of {blockheader.nonce}")
+            print(f"Block {BlockHeight} mined successfully with Nonce value of {blockheader.nonce}\n")
             tx_json_list = [tx.to_dict() for tx in newBlock.Txs]
             block_to_save = Block(
                 BlockHeight,

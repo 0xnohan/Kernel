@@ -25,7 +25,6 @@ def load_miner_info():
 class CoinbaseTx:
     def __init__(self, BlockHeight):
         self.BlockHeight = BlockHeight
-        self.BlockHeightInLittleEndian = int_to_little_endian(BlockHeight, bytes_needed(BlockHeight))
         self.privateKey, self.minerAddress = load_miner_info()
 
     def calculate_reward(self):
@@ -33,14 +32,17 @@ class CoinbaseTx:
         reward_float = INITIAL_REWARD_KERNELS * (REDUCTION_FACTOR ** reduction_periods)
         return max(0, int(reward_float))
 
-    def CoinbaseTransaction(self):
-        tx_ins = [TxIn(prev_tx=b"\0" * 32, prev_index=0xFFFFFFFF)]
-        tx_ins[0].script_sig.cmds.append(self.BlockHeightInLittleEndian)
+    def CoinbaseTransaction(self, fees):
+        tx_ins = [TxIn(
+            prev_tx=b"\0" * 32, 
+            prev_index=0xFFFFFFFF,
+            script_sig=Script([int_to_little_endian(self.BlockHeight, bytes_needed(self.BlockHeight))])
+        )]
 
-        target_amount = self.calculate_reward() 
+        total_reward = self.calculate_reward() + fees
         target_h160 = decode_base58(self.minerAddress)
         target_script = Script.p2pkh_script(target_h160)
-        tx_outs = [TxOut(amount=target_amount, script_pubkey=target_script)]
+        tx_outs = [TxOut(amount=total_reward, script_pubkey=target_script)]
         
         coinBaseTx = Tx(1, tx_ins, tx_outs, 0)
         coinBaseTx.TxId = coinBaseTx.id()
