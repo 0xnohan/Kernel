@@ -184,7 +184,16 @@ def main():
                         print(f"\nSender: {from_addr}")
                         to_addr = input("Recipient address: ")
                         amount = input("Amount in KNL: ")
-                        command = {"command": "send_tx", "params": {"from": from_addr, "to": to_addr, "amount": amount}}
+                        print("\nSelect transaction fee rate:")
+                        print("  1 - Fast (10 kernels/byte)")
+                        print("  2 - Normal (5 kernels/byte)")
+                        print("  3 - Slow (1 kernel/byte)")
+                        fee_choice = input(">> ")
+                        fee_map = {'1': 10, '2': 5, '3': 1}
+                        fee_rate = fee_map.get(fee_choice, 5) #5 by default
+                        print(f"Fee rate selected: {fee_rate} kernels/byte")
+
+                        command = {"command": "send_tx", "params": {"from": from_addr, "to": to_addr, "amount": amount, "fee_rate": fee_rate}}
                         response = SendRpcCommand(host, rpc_port, command)
                     else:
                         response = {"message": "Invalid selection."}

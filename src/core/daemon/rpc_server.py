@@ -57,7 +57,8 @@ def handleRpcCommand(command, utxos, mempool, miningProcessManager):
             return {"status": "error", "message": f"Wallet '{wallet_name}' already exists."}
         
     elif cmd == 'send_tx':
-        send_handler = Send(params['from'], params['to'], float(params['amount']), utxos, mempool)
+        fee_rate = params.get('fee_rate', 5)
+        send_handler = Send(params['from'], params['to'], float(params['amount']), fee_rate, utxos, mempool)
         tx = send_handler.prepareTransaction()
         if tx:
             mempool[tx.id()] = tx
