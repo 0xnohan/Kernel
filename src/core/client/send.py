@@ -6,6 +6,8 @@ from src.core.primitives.transaction import TxIn, TxOut, Tx
 from src.database.db_manager import AccountDB
 from src.utils.elleptic_curve import PrivateKey
 
+from src.core.kmain.constants import TX_BASE_SIZE, TX_INPUT_SIZE, TX_OUTPUT_SIZE
+
 class Send:
     def __init__(self, fromAccount, toAccount, Amount_float, feeRate, UTXOS, MEMPOOL):
         self.COIN = 100000000
@@ -23,6 +25,9 @@ class Send:
             self.Amount = 0
             self.isBalanceEnough = False
             print(f"Error: Invalid amount ({Amount_float}) passed to send")
+
+    def estimate_tx_size(self, num_inputs, num_outputs):
+        return TX_BASE_SIZE + (num_inputs * TX_INPUT_SIZE) + (num_outputs * TX_OUTPUT_SIZE)
 
     def scriptPubKey(self, PublicAddress):
         h160 = decode_base58(PublicAddress)
@@ -84,17 +89,17 @@ class Send:
             self.Total += utxo['amount']
             print(f"DEBUG: Selecting UTXO {utxo['tx_hex']}_{utxo['index']} with amount {utxo['amount']}. Total collected: {self.Total}")
 
-
-            estimated_size = 10 + len(TxIns) * 148 + 2 * 34
+            estimated_size = self.estimate_tx_size(num_inputs=len(TxIns), num_outputs=2)
             estimated_fee = int(estimated_size * self.feeRate)
 
             if self.Total >= self.Amount + estimated_fee:
                 print("DEBUG: Collected enough to cover amount + fees")
                 break
 
-        final_estimated_size = 10 + len(TxIns) * 148 + 2 * 34
-        final_estimated_fee = int(final_estimated_size * self.feeRate)
-        if self.Total < self.Amount + final_estimated_fee:
+        
+        final_size = self.estimate_tx_size(num_inputs=len(TxIns), num_outputs=2)
+        final_fee = int(final_size * self.feeRate)
+        if self.Total < self.Amount + final_fee:
             self.isBalanceEnough = False
             return []
 
@@ -105,7 +110,8 @@ class Send:
         TxOuts = []
         amount_to_send_kernel = self.Amount
 
-        estimated_size = 10 + len(self.TxIns) * 148 + 2 * 34 #2 outputs for now (receiver & sender)
+        num_outputs = 2 #2 for now (receiver & sender)
+        estimated_size = self.estimate_tx_size(num_inputs=len(self.TxIns), num_outputs=num_outputs)
         self.fee = int(estimated_size * self.feeRate)
 
         if self.Total < amount_to_send_kernel + self.fee:
@@ -127,10 +133,17 @@ class Send:
                  TxOuts.append(TxOut(self.changeAmount, self.From_address_script_pubkey))
             else:
                  print("Error: Sender scriptPubKey not available for change output.")
-        elif self.changeAmount < 0:
+
+        elif self.changeAmount == 0:
+            num_outputs = 1
+
+        else:
              print("Error: Negative change amount calculated.")
              return []
 
+        final_size = self.estimate_tx_size(num_inputs=len(self.TxIns), num_outputs=num_outputs)
+        self.fee = int(final_size * self.feeRate)
+        
         return TxOuts
 
 

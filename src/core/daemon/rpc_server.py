@@ -7,6 +7,8 @@ from src.core.client.wallet import wallet
 from src.core.client.send import Send 
 from src.database.db_manager import AccountDB
 from src.utils.serialization import decode_base58
+from src.core.kmain.constants import FEE_RATE_NORMAL
+
 
 def calculate_wallet_balances(wallets, utxos):
     balances = {wallet.get('PublicAddress'): 0 for wallet in wallets}
@@ -57,7 +59,7 @@ def handleRpcCommand(command, utxos, mempool, miningProcessManager):
             return {"status": "error", "message": f"Wallet '{wallet_name}' already exists."}
         
     elif cmd == 'send_tx':
-        fee_rate = params.get('fee_rate', 5)
+        fee_rate = params.get('fee_rate', FEE_RATE_NORMAL)
         send_handler = Send(params['from'], params['to'], float(params['amount']), fee_rate, utxos, mempool)
         tx = send_handler.prepareTransaction()
         if tx:
