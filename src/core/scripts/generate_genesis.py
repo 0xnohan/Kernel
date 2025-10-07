@@ -13,7 +13,7 @@ from src.utils.serialization import merkle_root, target_to_bits, int_to_little_e
 from src.utils.crypto_hash import hash256
 
 GENESIS_REWARD_ADDRESS = "kY7G5zouz5BBxmBn2g5a6zCf7BGeW86eB1"
-GENESIS_MESSAGE = b"Le Figaro 06/10/2025: La crise financiere s'intensifie"
+GENESIS_MESSAGE = b"Test"
 INITIAL_TARGET = 0x0000FFFF00000000000000000000000000000000000000000000000000000000
 TIMESTAMP = int(time.time())
 
@@ -48,7 +48,8 @@ def main():
     coinbase_tx = Tx(version=1, tx_ins=[tx_in], tx_outs=[tx_out], locktime=0)
     coinbase_tx.TxId = coinbase_tx.id()
     merkle_tree_root = merkle_root([bytes.fromhex(coinbase_tx.TxId)])
-    bits = target_to_bits(INITIAL_TARGET)
+    #bits = target_to_bits(INITIAL_TARGET)
+    bits = bytes.fromhex("b22d121e")
     
     block_header = BlockHeader(
         version=1,
@@ -71,8 +72,8 @@ def main():
 
     print("\n--- GENESIS BLOCK DATA ---")
     print(f"Timestamp: {mined_header.timestamp}")
-    print(f"Nonce: {mined_header.nonce}")
     print(f"Bits: {mined_header.bits.hex()}")
+    print(f"Nonce: {mined_header.nonce}")
     print(f"Merkle Root: {mined_header.merkleRoot.hex()}")
     print(f"Block Hash: {mined_header.blockHash}")
     print(f"Transaction Hash: {coinbase_tx.TxId}")
