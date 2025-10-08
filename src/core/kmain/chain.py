@@ -107,7 +107,7 @@ class Blockchain:
 
     def adjustTargetDifficulty(self, BlockHeight):
         if BlockHeight > 0 and BlockHeight % RESET_DIFFICULTY_AFTER_BLOCKS == 0:
-            bits, timestamp = self.getTargetDifficultyAndTimestamp(BlockHeight - 10)
+            bits, timestamp = self.getTargetDifficultyAndTimestamp(BlockHeight - RESET_DIFFICULTY_AFTER_BLOCKS)
             Lastbits, lastTimestamp = self.getTargetDifficultyAndTimestamp()
 
             lastTarget = bits_to_target(bytes.fromhex(bits))

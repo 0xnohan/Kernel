@@ -6,4 +6,4 @@ def hash256(s):
 
 
 def hash160(s):
-    return RIPEMD160.new(hash256(s).digest()).digest()
+    return RIPEMD160.new(hashlib.sha256(s).digest()).digest()

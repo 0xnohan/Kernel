@@ -1,14 +1,20 @@
+import time
+
 from src.utils.serialization import decode_base58
 from src.core.primitives.script import Script
 from src.core.primitives.transaction import TxIn, TxOut, Tx
 from src.database.db_manager import AccountDB
 from src.utils.elleptic_curve import PrivateKey
 
+from src.core.kmain.constants import TX_BASE_SIZE, TX_INPUT_SIZE, TX_OUTPUT_SIZE
+
 class Send:
-    def __init__(self, fromAccount, toAccount, Amount_float, UTXOS, MEMPOOL):
+    def __init__(self, fromAccount, toAccount, Amount_float, feeRate, UTXOS, MEMPOOL):
         self.COIN = 100000000
         self.FromPublicAddress = fromAccount
         self.toAccount = toAccount
+        self.feeRate = feeRate
+        self.receivedTime = time.time()
         self.utxos = UTXOS
         self.mempool = MEMPOOL 
         self.isBalanceEnough = True
@@ -19,6 +25,9 @@ class Send:
             self.Amount = 0
             self.isBalanceEnough = False
             print(f"Error: Invalid amount ({Amount_float}) passed to send")
+
+    def estimate_tx_size(self, num_inputs, num_outputs):
+        return TX_BASE_SIZE + (num_inputs * TX_INPUT_SIZE) + (num_outputs * TX_OUTPUT_SIZE)
 
     def scriptPubKey(self, PublicAddress):
         h160 = decode_base58(PublicAddress)
@@ -38,10 +47,8 @@ class Send:
 
     def prepareTxIn(self):
         TxIns = []
-        self.Total = 0 
-        amount_needed_kernel = self.Amount
+        self.Total = 0
 
-        # get script pubkey
         try:
             self.From_address_script_pubkey = self.scriptPubKey(self.FromPublicAddress)
             self.fromPubKeyHash = self.From_address_script_pubkey.cmds[2]
@@ -49,79 +56,64 @@ class Send:
             print(f"Error creating scriptPubKey for sender: {e}")
             self.isBalanceEnough = False
             return []
-        
-        # Create all UTXOs already spent in mempool
+
         mempool_spent_utxos = set()
-        try:
-            current_mempool = dict(self.mempool)
-            print(f"DEBUG: Checking {len(current_mempool)} transactions in mempool for spent UTXOs.")
-            for txid_mem, tx_mem_obj in current_mempool.items():
-                if hasattr(tx_mem_obj, 'tx_ins'):
-                    for tx_in_mem in tx_mem_obj.tx_ins:
-                        utxo_id = f"{tx_in_mem.prev_tx.hex()}_{tx_in_mem.prev_index}"
-                        mempool_spent_utxos.add(utxo_id)
-            print(f"DEBUG: Found {len(mempool_spent_utxos)} UTXOs spent in mempool.")
-        except Exception as e:
-            print(f"Error processing mempool to find spent UTXOs: {e}")
+        current_mempool = dict(self.mempool)
+        print(f"DEBUG: Checking {len(current_mempool)} transactions in mempool for spent UTXOs")
+        for tx_mem_obj in current_mempool.values():
+            if hasattr(tx_mem_obj, 'tx_ins'):
+                for tx_in_mem in tx_mem_obj.tx_ins:
+                    mempool_spent_utxos.add(f"{tx_in_mem.prev_tx.hex()}_{tx_in_mem.prev_index}")
+        print(f"DEBUG: Found {len(mempool_spent_utxos)} UTXOs spent in mempool")
 
-        # Copy UTXOs non spents
-        confirmed_utxos = {}
-        try:
-            confirmed_utxos = dict(self.utxos)
-        except Exception as e:
-            print(f"Error converting managed UTXOS dict to normal dict: {e}")
-            self.isBalanceEnough = False
-            return []
-
-        if not confirmed_utxos:
-             print("No confirmed UTXOs found.")
-             self.isBalanceEnough = False
-             return []
-
-        # Get confirmed & non-spent UTXOs from mempool
-        selected_utxo_keys_in_tx = set() 
+        spendable_utxos = []
+        confirmed_utxos = dict(self.utxos)
         for tx_hex, TxObj in confirmed_utxos.items():
-            if self.Total >= amount_needed_kernel:
-                break 
-
             if not hasattr(TxObj, 'tx_outs'): continue
-
             for index, txout in enumerate(TxObj.tx_outs):
                 utxo_id = f"{tx_hex}_{index}"
-
-                # Check if :
-                # - is from sender
-                # - is NOT in the set of already spent UTXOs
-                # -is NOT already selected for THIS tx
-                if hasattr(txout, 'script_pubkey') and \
-                   hasattr(txout.script_pubkey, 'cmds') and \
-                   len(txout.script_pubkey.cmds) > 2 and \
+                if hasattr(txout.script_pubkey, 'cmds') and len(txout.script_pubkey.cmds) > 2 and \
                    txout.script_pubkey.cmds[2] == self.fromPubKeyHash and \
-                   utxo_id not in mempool_spent_utxos and \
-                   utxo_id not in selected_utxo_keys_in_tx:
+                   utxo_id not in mempool_spent_utxos:
+                    spendable_utxos.append({'tx_hex': tx_hex, 'index': index, 'amount': txout.amount})
 
-                    print(f"DEBUG: Selecting UTXO {utxo_id} with amount {txout.amount}")
-                    self.Total += txout.amount
-                    prev_tx_bytes = bytes.fromhex(tx_hex)
-                    TxIns.append(TxIn(prev_tx_bytes, index))
-                    selected_utxo_keys_in_tx.add(utxo_id) 
-
-                    if self.Total >= amount_needed_kernel:
-                        break 
-
-        # Last check for balance
-        if self.Total < amount_needed_kernel:
+        if not spendable_utxos:
+            print("No spendable UTXOs found.")
             self.isBalanceEnough = False
             return []
 
-        self.isBalanceEnough = True 
+        spendable_utxos.sort(key=lambda x: x['amount'])
+
+        for utxo in spendable_utxos:
+            TxIns.append(TxIn(bytes.fromhex(utxo['tx_hex']), utxo['index']))
+            self.Total += utxo['amount']
+            print(f"DEBUG: Selecting UTXO {utxo['tx_hex']}_{utxo['index']} with amount {utxo['amount']}. Total collected: {self.Total}")
+
+            estimated_size = self.estimate_tx_size(num_inputs=len(TxIns), num_outputs=2)
+            estimated_fee = int(estimated_size * self.feeRate)
+
+            if self.Total >= self.Amount + estimated_fee:
+                print("DEBUG: Collected enough to cover amount + fees")
+                break
+
+        
+        final_size = self.estimate_tx_size(num_inputs=len(TxIns), num_outputs=2)
+        final_fee = int(final_size * self.feeRate)
+        if self.Total < self.Amount + final_fee:
+            self.isBalanceEnough = False
+            return []
+
+        self.isBalanceEnough = True
         return TxIns
 
     def prepareTxOut(self):
         TxOuts = []
         amount_to_send_kernel = self.Amount
 
-        self.fee = 25000000 
+        num_outputs = 2 #2 for now (receiver & sender)
+        estimated_size = self.estimate_tx_size(num_inputs=len(self.TxIns), num_outputs=num_outputs)
+        self.fee = int(estimated_size * self.feeRate)
+
         if self.Total < amount_to_send_kernel + self.fee:
              print(f"Insufficient funds for amount + fee: Required {amount_to_send_kernel + self.fee}, Available {self.Total}")
              self.isBalanceEnough = False
@@ -141,10 +133,17 @@ class Send:
                  TxOuts.append(TxOut(self.changeAmount, self.From_address_script_pubkey))
             else:
                  print("Error: Sender scriptPubKey not available for change output.")
-        elif self.changeAmount < 0:
+
+        elif self.changeAmount == 0:
+            num_outputs = 1
+
+        else:
              print("Error: Negative change amount calculated.")
              return []
 
+        final_size = self.estimate_tx_size(num_inputs=len(self.TxIns), num_outputs=num_outputs)
+        self.fee = int(final_size * self.feeRate)
+        
         return TxOuts
 
 
@@ -193,6 +192,8 @@ class Send:
              return False
 
         self.TxObj = Tx(1, self.TxIns, self.TxOuts, 0)
+        self.TxObj.fee = self.fee 
+        self.TxObj.receivedTime = self.receivedTime
 
         #Signature
         if not self.signTx():
