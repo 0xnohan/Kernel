@@ -1,5 +1,6 @@
 import os
 import json
+from sqlitedict import SqliteDict
 
 class BaseDB:
     def __init__(self):
@@ -38,14 +39,64 @@ class BaseDB:
 
 class BlockchainDB(BaseDB):
     def __init__(self):
-        self.filename = "blockchain"
-        super().__init__()
+        self.basepath = "data"
+        self.db_file = os.path.join(self.basepath, "blockchain.sqlite") 
+        self.db = SqliteDict(self.db_file, autocommit=False)
+
+    def read(self):
+        blocks = []
+        try:
+            heights = sorted([int(k) for k in self.db.keys()]) 
+        except ValueError:
+            return []
+        
+        for height in heights:
+            blocks.append(self.db[str(height)]) 
+            
+        return blocks
+
+    def update(self, data):
+        print("Update called, delete compromised blocks...")
+        
+        try:
+            self.db.clear() 
+            self.db.commit() 
+            self.write(data) 
+            print(f"Db updated with {len(data)} valid blocks")
+            return True
+        
+        except Exception as e:
+            print(f"Error when updating db: {e}")
+            self.db.rollback()
+            return False
+
+
+    def write(self, items):
+        try:
+            for block_dict in items:
+                height = block_dict['Height']
+                self.db[str(height)] = block_dict
+                
+            self.db.commit()
+            print(f"Writing {len(items)} block(s) in db")
+        except Exception as e:
+            print(f"Error when writing to db: {e}")
+            self.db.rollback()
+
 
     def lastBlock(self):
-        data = self.read()
-
-        if data:
-            return data[-1]
+        try:
+            if not self.db.keys():
+                return None
+            
+            max_height = max([int(k) for k in self.db.keys()]) 
+            return self.db[str(max_height)]
+            
+        except ValueError:
+            return None
+        except Exception as e:
+            print(f"Error when getting last block: {e}") 
+            return None
 
 
 class AccountDB(BaseDB):
