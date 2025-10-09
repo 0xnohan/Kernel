@@ -2,7 +2,6 @@ from src.core.primitives.script import Script
 from src.utils.serialization import (
     int_to_little_endian,
     bytes_needed,
-    decode_base58,
     little_endian_to_int,
     encode_varint,
     read_varint
@@ -91,71 +90,67 @@ class Tx:
     def is_coinbase(self):
         if len(self.tx_ins) != 1:
             return False
-
         first_input = self.tx_ins[0]
-
         if first_input.prev_tx != b"\x00" * 32:
             return False
-
         if first_input.prev_index != 0xFFFFFFFF:
             return False
-
         return True
 
     @classmethod
     def to_obj(cls, item):
         TxInList = []
         TxOutList = []
-        cmds = []
         
-        for tx_in in item['tx_ins']:
-            for cmd in tx_in['script_sig']['cmds']:
-               
-                if tx_in['prev_tx'] == "0000000000000000000000000000000000000000000000000000000000000000":
-                    cmds.append(int_to_little_endian(int(cmd), bytes_needed(int(cmd))))
-                else:
-                    if type(cmd) == int:
-                        cmds.append(cmd)
+        for tx_in_data in item['tx_ins']:
+            # Gérer les cmds qui peuvent être des int (coinbase height) ou des hex strings
+            cmds = []
+            if 'cmds' in tx_in_data['script_sig']:
+                for cmd in tx_in_data['script_sig']['cmds']:
+                    if isinstance(cmd, int):
+                        cmds.append(int_to_little_endian(cmd, bytes_needed(cmd)))
                     else:
                         cmds.append(bytes.fromhex(cmd))
-            TxInList.append(TxIn(bytes.fromhex(tx_in['prev_tx']),tx_in['prev_index'],Script(cmds)))   
+            script_sig = Script(cmds)
+            TxInList.append(TxIn(bytes.fromhex(tx_in_data['prev_tx']), tx_in_data['prev_index'], script_sig))
 
-
-        cmdsout = []
-        for tx_out in item['tx_outs']:
-            for cmd in tx_out['script_pubkey']['cmds']:
-                if type(cmd) == int:
-                    cmdsout.append(cmd)
-                else:
-                    cmdsout.append(bytes.fromhex(cmd))
-                    
-            TxOutList.append(TxOut(tx_out['amount'],Script(cmdsout)))
-            cmdsout= []
+        for tx_out_data in item['tx_outs']:
+            cmdsout = []
+            if 'cmds' in tx_out_data['script_pubkey']:
+                for cmd in tx_out_data['script_pubkey']['cmds']:
+                    if isinstance(cmd, int):
+                        cmdsout.append(cmd)
+                    else:
+                        cmdsout.append(bytes.fromhex(cmd))
+            script_pubkey = Script(cmdsout)
+            TxOutList.append(TxOut(tx_out_data['amount'], script_pubkey))
         
-        return cls(1, TxInList, TxOutList, 0)
+        return cls(item['version'], TxInList, TxOutList, item['locktime'])
                 
-
-
     def to_dict(self):
-        for tx_index, tx_in in enumerate(self.tx_ins):
+        """RESTAURATION DE L'ANCIENNE MÉTHODE DE CONVERSION"""
+        # Cette méthode modifie l'objet en place, comme dans votre code original.
+        for tx_in in self.tx_ins:
             if self.is_coinbase():
-                tx_in.script_sig.cmds[0] = little_endian_to_int(
-                    tx_in.script_sig.cmds[0]
-                )
+                # Gère le cas spécial de la hauteur de bloc dans la coinbase
+                if tx_in.script_sig.cmds and isinstance(tx_in.script_sig.cmds[0], bytes):
+                     tx_in.script_sig.cmds[0] = little_endian_to_int(tx_in.script_sig.cmds[0])
 
             tx_in.prev_tx = tx_in.prev_tx.hex()
-
-            for index, cmd in enumerate(tx_in.script_sig.cmds):
+            for i, cmd in enumerate(tx_in.script_sig.cmds):
                 if isinstance(cmd, bytes):
-                    tx_in.script_sig.cmds[index] = cmd.hex()
-
+                    tx_in.script_sig.cmds[i] = cmd.hex()
             tx_in.script_sig = tx_in.script_sig.__dict__
-            self.tx_ins[tx_index] = tx_in.__dict__
-
-        for index, tx_out in enumerate(self.tx_outs):
-            tx_out.script_pubkey.cmds[2] = tx_out.script_pubkey.cmds[2].hex()
+        
+        for tx_out in self.tx_outs:
+            for i, cmd in enumerate(tx_out.script_pubkey.cmds):
+                if isinstance(cmd, bytes):
+                    tx_out.script_pubkey.cmds[i] = cmd.hex()
             tx_out.script_pubkey = tx_out.script_pubkey.__dict__
-            self.tx_outs[index] = tx_out.__dict__
+
+        # Convertir les listes d'objets en listes de dictionnaires
+        self.tx_ins = [tx_in.__dict__ for tx_in in self.tx_ins]
+        self.tx_outs = [tx_out.__dict__ for tx_out in self.tx_outs]
 
         return self.__dict__
     
@@ -163,12 +158,10 @@ class TxIn:
     def __init__(self, prev_tx, prev_index, script_sig=None, sequence=0xFFFFFFFF):
         self.prev_tx = prev_tx
         self.prev_index = prev_index
-
         if script_sig is None:
             self.script_sig = Script()
         else:
             self.script_sig = script_sig
-
         self.sequence = sequence
 
     def serialize(self):
@@ -185,7 +178,6 @@ class TxIn:
         script_sig = Script.parse(s)
         sequence = little_endian_to_int(s.read(4))
         return cls(prev_tx, prev_index, script_sig, sequence)
-
 
 class TxOut:
     def __init__(self, amount, script_pubkey):

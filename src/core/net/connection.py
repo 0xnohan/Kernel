@@ -1,5 +1,5 @@
 import socket 
-from src.core.net.protocol import NetworkEnvelope, FINISHED_SENDING
+from src.core.net.protocol import NetworkEnvelope
 
 class Node:
     def __init__(self, host, port):

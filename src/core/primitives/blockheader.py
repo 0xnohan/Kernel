@@ -25,6 +25,7 @@ class BlockHeader:
 
     def serialize(self):
         result = int_to_little_endian(self.version, 4)
+        
         prev_block_hash_bytes = self.prevBlockHash
         if isinstance(prev_block_hash_bytes, str):
             prev_block_hash_bytes = bytes.fromhex(prev_block_hash_bytes)
@@ -36,15 +37,22 @@ class BlockHeader:
         result += prev_block_hash_bytes[::-1]
         result += merkle_root_bytes[::-1]
         result += int_to_little_endian(self.timestamp, 4)
-        result += self.bits
+
+        bits_bytes = self.bits
+        if isinstance(bits_bytes, str):
+            bits_bytes = bytes.fromhex(bits_bytes)
+        result += bits_bytes
+    
         nonce_bytes = self.nonce
         if isinstance(nonce_bytes, int):
             nonce_bytes = int_to_little_endian(nonce_bytes, 4)
         result += nonce_bytes
+        
         return result
     
     def to_hex(self):
-        self.blockHash = self.generateBlockHash()
+        if not self.blockHash:
+            self.blockHash = self.generateBlockHash()
 
         if isinstance(self.nonce, bytes):
             self.nonce = little_endian_to_int(self.nonce)

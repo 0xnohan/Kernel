@@ -32,7 +32,7 @@ def calculate_wallet_balances(wallets, utxos):
         
     return wallets
 
-def handleRpcCommand(command, utxos, mempool, miningProcessManager):
+def handleRpcCommand(command, utxos, mempool, miningProcessManager, new_tx_queue=None):
     cmd = command.get('command')
     params = command.get('params', {})
     
@@ -62,11 +62,14 @@ def handleRpcCommand(command, utxos, mempool, miningProcessManager):
         fee_rate = params.get('fee_rate', FEE_RATE_NORMAL)
         send_handler = Send(params['from'], params['to'], float(params['amount']), fee_rate, utxos, mempool)
         tx = send_handler.prepareTransaction()
-        if tx:
-            mempool[tx.id()] = tx
-            return {"status": "success", "message": "Transaction added to mempool", "txid": tx.id()}
-        else:
+        
+        if tx and new_tx_queue:
+            new_tx_queue.put(tx)
+            return {"status": "success", "message": "Transaction sent to daemon for processing", "txid": tx.id()}
+        elif not tx:
             return {"status": "error", "message": "Failed to create transaction. Check balance and addresses."}
+        else:
+            return {"status": "error", "message": "Cannot broadcast transaction, daemon queue not available."}
     
     elif cmd == 'get_wallets':
         try:
@@ -83,7 +86,7 @@ def handleRpcCommand(command, utxos, mempool, miningProcessManager):
     else:
         return {"status": "error", "message": f"Command '{cmd}' not recognized"}
 
-def rpcServer(host, rpcPort, utxos, mempool, miningProcessManager):
+def rpcServer(host, rpcPort, utxos, mempool, miningProcessManager, new_tx_queue=None):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((host, rpcPort))
         s.listen()
@@ -97,7 +100,7 @@ def rpcServer(host, rpcPort, utxos, mempool, miningProcessManager):
                 
                 try:
                     command = json.loads(data.decode('utf-8'))
-                    response = handleRpcCommand(command, utxos, mempool, miningProcessManager)
+                    response = handleRpcCommand(command, utxos, mempool, miningProcessManager, new_tx_queue)
                 except Exception as e:
                     response = {"status": "error", "message": f"An unexpected error occurred: {e}"}
 

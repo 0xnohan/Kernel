@@ -27,8 +27,10 @@ class Block:
         Txs = []
 
         for _ in range(numTxs):
-            Txs.append(Tx.parse(s))
-
+            tx = Tx.parse(s)
+            setattr(tx, 'TxId', tx.id()) 
+            Txs.append(tx)
+            
         return cls(Height, BlockSize, blockHeader, numTxs, Txs)
         
     def serialize(self):
@@ -60,6 +62,10 @@ class Block:
         return cls(lastblock['Height'], lastblock['Blocksize'], block, len(Transactions), Transactions)
 
     def to_dict(self):
-        dt = self.__dict__
-        self.BlockHeader = self.BlockHeader.to_dict()
-        return dt
+        if isinstance(self.BlockHeader, BlockHeader):
+            self.BlockHeader.to_hex()
+            self.BlockHeader = self.BlockHeader.__dict__
+        
+        self.Txs = [tx.to_dict() for tx in self.Txs]
+        
+        return self.__dict__

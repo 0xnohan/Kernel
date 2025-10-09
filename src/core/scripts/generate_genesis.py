@@ -48,8 +48,8 @@ def main():
     coinbase_tx = Tx(version=1, tx_ins=[tx_in], tx_outs=[tx_out], locktime=0)
     coinbase_tx.TxId = coinbase_tx.id()
     merkle_tree_root = merkle_root([bytes.fromhex(coinbase_tx.TxId)])
-    #bits = target_to_bits(INITIAL_TARGET)
-    bits = bytes.fromhex("3767021e")
+    bits = target_to_bits(INITIAL_TARGET)
+    #bits = bytes.fromhex("3767021e")
     
     block_header = BlockHeader(
         version=1,

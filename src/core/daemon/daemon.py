@@ -1,19 +1,66 @@
+# src/core/daemon/daemon.py
+
 import sys
 import os
-import configparser
 import argparse
-from multiprocessing import Process, Manager
+from multiprocessing import Process, Manager, Queue
 import time
 
 sys.path.append(os.getcwd())
 
-from src.core.kmain.chain import Blockchain
-from src.core.net.sync_manager import syncManager
-from src.api.server import main as web_main 
+from src.core.kmain.miner import Miner
+from src.core.net.sync_manager import SyncManager
+from src.api.server import main as web_main
 from src.core.daemon.rpc_server import rpcServer
-from src.core.kmain.utxo_manager import UTXOManager 
+from src.core.kmain.utxo_manager import UTXOManager
+from src.core.kmain.mempool import MempoolManager
 from src.utils.config_loader import load_config
+from src.core.kmain.validator import Validator
 from threading import Thread
+from src.core.kmain.genesis import create_genesis_block
+from src.database.db_manager import BlockchainDB
+
+def handle_mined_blocks(mined_block_queue, sync_manager, utxo_manager, mempool_manager):
+    """
+    Écoute les blocs minés, met à jour l'état en mémoire et diffuse.
+    """
+    while True:
+        mined_block = mined_block_queue.get()
+        print(f"Daemon received mined block {mined_block.Height} from Miner process.")
+
+        # Le mineur a déjà écrit en DB. Le daemon met à jour les dictionnaires partagés.
+        spent_outputs = []
+        for tx in mined_block.Txs[1:]: # On ignore la coinbase
+            for tx_in in tx.tx_ins:
+                spent_outputs.append([tx_in.prev_tx, tx_in.prev_index])
+        
+        utxo_manager.remove_spent_utxos(spent_outputs)
+        utxo_manager.add_new_utxos(mined_block.Txs)
+        mempool_manager.remove_transactions([bytes.fromhex(tx.id()) for tx in mined_block.Txs])
+        print("Daemon updated UTXO set and mempool.")
+        sync_manager.broadcast_block(mined_block)
+
+
+def handle_new_transactions(new_tx_queue, sync_manager, mempool, utxos):
+    """
+    Écoute les transactions créées localement, les valide,
+    les ajoute au mempool et les diffuse.
+    """
+    validator = Validator(utxos, mempool)
+    while True:
+        new_tx = new_tx_queue.get()
+        tx_id = new_tx.id()
+        if tx_id in mempool:
+            continue
+
+        print(f"Daemon received new local transaction {tx_id[:10]}...")
+        if validator.validate_transaction(new_tx):
+            mempool[tx_id] = new_tx
+            print(f"Local transaction {tx_id[:10]}... is valid, broadcasting...")
+            sync_manager.broadcast_tx(new_tx)
+        else:
+            print(f"Local transaction {tx_id[:10]}... is invalid, discarding.")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Kernel Daemon")
@@ -30,40 +77,60 @@ def main():
     with Manager() as manager:
         utxos = manager.dict()
         mempool = manager.dict()
-        newBlockAvailable = manager.dict()
-        secondaryChain = manager.dict()
-        miningProcessManager = manager.dict({'is_mining': False, 'shutdown_requested': False})
-
-        # P2P Sync Manager
-        sync = syncManager(host, p2p_port, newBlockAvailable, secondaryChain, mempool)
+        new_block_available = manager.dict() # Ce flag est pour interrompre le mineur
+        mining_process_manager = manager.dict({'is_mining': False, 'shutdown_requested': False})
         
-        # P2P Server Thread
-        P2PserverThread = Thread(target=sync.spinUpTheServer)
-        P2PserverThread.daemon = True 
-        P2PserverThread.start()
+        # Création d'une Queue pour la communication Miner -> Daemon
+        mined_block_queue = Queue()
+        new_tx_queue = Queue()
+
+        # Instanciation des managers
+        utxo_manager = UTXOManager(utxos)
+        mempool_manager = MempoolManager(mempool, utxos)
+        sync_manager = SyncManager(host, p2p_port, new_block_available, None, mempool, utxos)
+        
+        # Lancement du serveur P2P en thread
+        p2p_server_thread = Thread(target=sync_manager.spin_up_the_server)
+        p2p_server_thread.daemon = True 
+        p2p_server_thread.start()
         print(f"P2P server started on port {p2p_port}")
 
-        # API Process
+        # Lancement de l'API en processus séparé
         processAPI = Process(target=web_main, args=(utxos, mempool, api_port, p2p_port))
         processAPI.start()
         print(f"API server started on port {api_port}")
         
-        # RPC Process
-        processRPC = Process(target=rpcServer, args=(host, rpc_port, utxos, mempool, miningProcessManager))
+        # Lancement du serveur RPC en processus séparé
+        processRPC = Process(target=rpcServer, args=(host, rpc_port, utxos, mempool, mining_process_manager, new_tx_queue))
         processRPC.start()
 
-        # Init UTXO set
-        utxo_manager = UTXOManager(utxos)
+        # Initialisation de la base de données
+        db = BlockchainDB()
+        if not db.lastBlock():
+            if args.mine:
+                print("No blockchain found. Creating genesis block as the first node...")
+                genesis = create_genesis_block()
+                block_to_save = genesis.to_dict()
+                db.write([block_to_save])
+                print("Genesis block written to database.")
+            else:
+                print("No blockchain found. Waiting for blocks from the network...")
+
         print("Initializing UTXO set...")
         utxo_manager.build_utxos_from_db()
         
-        # Init Blockchain
-        mainBlockchain = Blockchain(utxos, mempool, newBlockAvailable, secondaryChain, host, p2p_port)
-        if not mainBlockchain.fetch_last_block():
-            mainBlockchain.GenesisBlock()
-            
-        mainBlockchain.settargetWhileBooting()
+        # Lancement du thread qui écoute les blocs minés
+        block_handler_thread = Thread(target=handle_mined_blocks, args=(mined_block_queue, sync_manager, utxo_manager, mempool_manager))
+        block_handler_thread.daemon = True
+        block_handler_thread.start()
+
+        tx_handler_thread = Thread(target=handle_new_transactions, args=(new_tx_queue, sync_manager, mempool, utxos))
+        tx_handler_thread.daemon = True
+        tx_handler_thread.start()
+
+        # Laisser un peu de temps au serveur P2P pour démarrer avant de se connecter aux seeds
         time.sleep(2) 
+        
         config = load_config()
         if 'SEED_NODES' in config:
             print("Connecting to seed nodes...")
@@ -71,25 +138,24 @@ def main():
                 try:
                     peer_host, peer_port_str = address.split(':')
                     peer_port = int(peer_port_str)
-                    # Use the main sync manager instance to connect
-                    conn_thread = Thread(target=sync.connect_to_peer, args=(peer_host, peer_port))
-                    conn_thread.start()
+                    sync_manager.connect_to_peer(peer_host, peer_port)
                 except Exception as e:
                     print(f"Invalid seed node address format or connection failed: {address} ({e})")
         
         mining_process = None
         if args.mine:
-            miningProcessManager['is_mining'] = True
+            mining_process_manager['is_mining'] = True
 
         try:
-            while not miningProcessManager.get('shutdown_requested', False):
-                is_mining = miningProcessManager.get('is_mining', False)
+            while not mining_process_manager.get('shutdown_requested', False):
+                is_mining = mining_process_manager.get('is_mining', False)
                 if is_mining and (mining_process is None or not mining_process.is_alive()):
-                    print("Starting mining process...")
-                    mining_process = Process(target=mainBlockchain.main)
+                    print("Daemon is starting the Miner process...")
+                    miner = Miner(mempool, utxos, new_block_available, mined_block_queue)
+                    mining_process = Process(target=miner.run)
                     mining_process.start()
                 elif not is_mining and (mining_process and mining_process.is_alive()):
-                    print("Stopping mining process...")
+                    print("Daemon is stopping the Miner process...")
                     mining_process.terminate()
                     mining_process.join()
                     mining_process = None
@@ -97,8 +163,10 @@ def main():
         except KeyboardInterrupt:
             print("\nShutting down daemon...")
         finally:
-            processAPI.terminate()
-            processRPC.terminate()
+            if processAPI.is_alive():
+                processAPI.terminate()
+            if processRPC.is_alive():
+                processRPC.terminate()
             if mining_process and mining_process.is_alive():
                 mining_process.terminate()
 

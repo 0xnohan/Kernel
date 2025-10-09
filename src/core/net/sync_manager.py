@@ -1,314 +1,375 @@
 from src.core.primitives.block import Block
-from src.core.primitives.blockheader import BlockHeader
 from src.core.net.connection import Node
-from src.database.db_manager import BlockchainDB, NodeDB
+from src.database.db_manager import BlockchainDB
 from src.core.primitives.transaction import Tx
-from src.core.net.protocol import NetworkEnvelope, requestBlock, FinishedSending, Addr, GetAddr
-from src.utils.serialization import little_endian_to_int
-from threading import Thread, Lock
+from src.core.net.protocol import NetworkEnvelope
+from src.core.kmain.validator import Validator
+from src.core.kmain.utxo_manager import UTXOManager
+from src.core.kmain.mempool import MempoolManager
+from src.core.kmain.pow import check_pow
+from src.core.net.messages import (
+    Version, VerAck, GetAddr, Addr,
+    GetHeaders, Headers, Inv, GetData, Tx, Block,
+    INV_TYPE_TX, INV_TYPE_BLOCK
+)
+from src.core.kmain.constants import MAX_HEADERS_TO_SEND
+from threading import Thread, Lock, RLock
 
-class syncManager:
-    def __init__(self, host, port, newBlockAvailable = None, secondryChain = None, Mempool = None):
+class SyncManager:
+    def __init__(self, host, port, newBlockAvailable=None, secondaryChain=None, mempool=None, utxos=None):
         self.host = host
-        self.port = port 
+        self.port = port
         self.newBlockAvailable = newBlockAvailable
-        self.secondryChain = secondryChain
-        self.Mempool = Mempool
-        self.peers = set()
-        self.peers_lock = Lock()
+        self.secondaryChain = secondaryChain
+        self.mempool = mempool
+        self.utxos = utxos 
+
+        self.validator = Validator(self.utxos, self.mempool)
+        self.db = BlockchainDB()
+
+        self.utxo_manager = UTXOManager(self.utxos)
+        self.mempool_manager = MempoolManager(self.mempool, self.utxos)
+
+        self.peer_handshake_status = {}
+        self.peers = {} 
+        self.peers_lock = RLock()
+        
+        self.sync_lock = Lock()
+        self.is_syncing = False
+
 
     def send_message(self, sock, message):
         envelope = NetworkEnvelope(message.command, message.serialize())
         sock.sendall(envelope.serialize())
+        # 
+        print(f"-> Sent {message.command.decode()} to {sock.getpeername()}")
+    
 
     def connect_to_peer(self, host, port):
         peer_id = f"{host}:{port}"
-
         with self.peers_lock:
             if peer_id in self.peers or (self.host == host and self.port == port):
                 return
 
         try:
+            #
             print(f"Attempting to connect to {peer_id}...")
             peer_node = Node(host, port)
-            client_socket = peer_node.connect(self.port) 
+            client_socket = peer_node.connect(self.port)
 
-            with self.peers_lock:
-                self.peers.add(peer_id)
+            last_block = self.db.lastBlock()
+            start_height = last_block['Height'] if last_block else 0
+            version_msg = Version(start_height=start_height)
+            self.send_message(client_socket, version_msg)
 
-            my_address_message = Addr(addresses=[(self.host, self.port)])
-            self.send_message(client_socket, my_address_message)
-            print(f"Announced my address to {peer_id}")
-
-            getaddr_msg = GetAddr()
-            self.send_message(client_socket, getaddr_msg)
-            print(f"Successfully connected to {peer_id}")
-
-            handler_thread = Thread(target=self.handleConnection, args=(client_socket, (host, port)))
+            handler_thread = Thread(target=self.handle_connection, args=(client_socket, (host, port)))
+            handler_thread.daemon = True
             handler_thread.start()
 
         except Exception as e:
             print(f"Failed to connect to peer {peer_id}. Error: {e}")
-            with self.peers_lock:
-                if peer_id in self.peers:
-                    self.peers.remove(peer_id)
 
 
-    def spinUpTheServer(self):
+    def spin_up_the_server(self):
         self.server = Node(self.host, self.port)
         self.server.startServer()
-        print("SERVER STARTED")
         print(f"[LISTENING] at {self.host}:{self.port}")
 
         while True:
             conn, addr = self.server.acceptConnection()
-            handleConn = Thread(target=self.handleConnection, args=(conn, addr))
-            handleConn.start()
+            handler_thread = Thread(target=self.handle_connection, args=(conn, addr))
+            handler_thread.daemon = True
+            handler_thread.start()
 
-    def handleConnection(self, conn, addr):
+
+    def handle_connection(self, conn, addr):
         peer_id_str = f"{addr[0]}:{addr[1]}"
         print(f"Handling new connection from {peer_id_str}")
-        stream = None
+
+        with self.peers_lock:
+            self.peers[peer_id_str] = conn
+        
         try:
             stream = conn.makefile('rb', None)
             
             while True:
                 envelope = NetworkEnvelope.parse(stream)
+                command = envelope.command.decode()
+                #
+                print(f"<- Received command '{command}' from {peer_id_str}")
                 
-                print(f"Received command '{envelope.command.decode()}' from {peer_id_str}")
+                if command == Version.command.decode():
+                    peer_version = Version.parse(envelope.stream())
+                    print(f"Peer {peer_id_str} version: {peer_version.version}, height: {peer_version.start_height}")
+                    if self.peer_handshake_status.get(peer_id_str) is None:
+                        last_block = BlockchainDB().lastBlock()
+                        start_height = last_block['Height'] if last_block else 0
+                        version_msg = Version(start_height=start_height)
+                        self.send_message(conn, version_msg)
 
-                if envelope.command == GetAddr.command:
-                    print(f"Received getaddr from {peer_id_str}. Sending known peers...")
+                    verack_msg = VerAck()
+                    self.send_message(conn, verack_msg)
+                    self.peer_handshake_status[peer_id_str] = {'version_received': True, 'verack_received': False}
+
+                elif command == VerAck.command.decode():
+                    if peer_id_str in self.peer_handshake_status and self.peer_handshake_status[peer_id_str]['version_received']:
+                        self.peer_handshake_status[peer_id_str]['verack_received'] = True
+                        print(f"Handshake complete with {peer_id_str}, connection established ")
+                        self.start_sync(conn)
+                    else:
+                        print(f"Warning: Received 'verack' from {peer_id_str} without a prior 'version'")
+
+                elif command == GetHeaders.command.decode():
+                    getheaders_msg = GetHeaders.parse(envelope.stream())
+                    self.handle_getheaders(conn, getheaders_msg)
+
+                elif command == Headers.command.decode():
+                    headers_msg = Headers.parse(envelope.stream())
+                    self.handle_headers(conn, headers_msg)
+
+                elif command == Inv.command.decode():
+                    inv_msg = Inv.parse(envelope.stream())
+                    self.handle_inv(conn, inv_msg)
+                
+                elif command == GetData.command.decode():
+                    getdata_msg = GetData.parse(envelope.stream())
+                    self.handle_getdata(conn, getdata_msg)
+
+                elif command == Tx.command.decode():
+                    tx_obj = Tx.parse(envelope.stream())
+                    self.handle_tx(tx_obj)
+
+                elif command == Block.command.decode():
+                    block_obj = Block.parse(envelope.stream())
+                    self.handle_block(block_obj)
+                
+                elif command == GetAddr.command.decode():
                     known_peers = []
                     with self.peers_lock:
                         for peer_id in self.peers:
                             host, port_str = peer_id.rsplit(':', 1)
                             known_peers.append((host, int(port_str)))
-                        
                     addr_msg = Addr(known_peers)
                     self.send_message(conn, addr_msg)
 
-                elif envelope.command == Addr.command:
+                elif command == Addr.command.decode():
                     addr_message = Addr.parse(envelope.stream())
-                    print(f"Received {len(addr_message.addresses)} peer addresses from {peer_id_str}")
                     for new_host, new_port in addr_message.addresses:
-                        peer_id_to_add = f"{new_host}:{new_port}"
-                        with self.peers_lock:
-                            if peer_id_to_add not in self.peers:
-                                print(f"Discovered new peer: {peer_id_to_add}")
-                                self.peers.add(peer_id_to_add)
-                        conn_thread = Thread(target=self.connect_to_peer, args=(new_host, new_port))
-                        conn_thread.start()
-
-                elif envelope.command == b'Tx':
-                    Transaction = Tx.parse(envelope.stream())
-                    Transaction.TxId = Transaction.id()
-                    if Transaction.TxId not in self.Mempool:
-                        self.Mempool[Transaction.TxId] = Transaction
-                        print(f"Added new transaction {Transaction.TxId[:10]}... to mempool")
-                    
-                elif envelope.command == b'block':
-                    blockObj = Block.parse(envelope.stream())
-                    BlockHeaderObj = BlockHeader(blockObj.BlockHeader.version,
-                                blockObj.BlockHeader.prevBlockHash, 
-                                blockObj.BlockHeader.merkleRoot, 
-                                blockObj.BlockHeader.timestamp,
-                                blockObj.BlockHeader.bits,
-                                blockObj.BlockHeader.nonce)
-                    
-                    block_hash = BlockHeaderObj.generateBlockHash()
-                    print(f"Received new block {blockObj.Height} ({block_hash[:10]}...) from {addr}")
-                    self.newBlockAvailable[block_hash] = blockObj
-
-                elif envelope.command == requestBlock.command:
-                    start_block, end_block = requestBlock.parse(envelope.stream())
-                    print(f"Peer {addr} requested blocks from {start_block.hex()[:10]}...")
-                    # self.sendBlockToRequestor(start_block) 
+                        self.connect_to_peer(new_host, new_port)
 
         except (IOError, ConnectionResetError) as e:
-            print(f"Connection with {addr} was closed by the peer")
+            pass
         except Exception as e:
-            print(f"An error occurred with peer {addr}. Closing connection. Error: {e}")
+            print(f"An error occurred with peer {peer_id_str}, error: {e}")
         finally:
-            if conn:
-                conn.close()
-            
-            peer_id = f"{addr[0]}:{addr[1]}"
-            if peer_id in self.peers:
-                self.peers.remove(peer_id)
-            print(f"Connection with {addr} closed")
+            self.cleanup_peer_connection(peer_id_str, conn)
 
-    def addNode(self, addr):
-        try:
-            peer_port = addr[1]
-            if not isinstance(peer_port, int) or peer_port <= 0:
+
+    def start_sync(self, conn):
+        """Déclenche la synchronisation de la blockchain avec un pair."""
+        with self.sync_lock:
+            if self.is_syncing:
                 return
-
-            nodeDb = NodeDB()
-            portList = nodeDb.read()
-
-            if peer_port not in portList:
-                nodeDb.write([peer_port])
-                print(f"Added new peer port {peer_port} to database")
-        except Exception as e:
-            print(f"Could not add node {addr} to DB. Error: {e}")
-
-
-    def sendBlockToRequestor(self, start_block, conn):
-        blocksToSend = self.fetchBlocksFromBlockchain(start_block)
-
-        try:
-            self.sendBlock(blocksToSend)
-            #self.sendSecondryChain()
-            #self.sendPortlist()
-            self.sendFinishedMessage()
-        except Exception as e:
-            print(f"Unable to send the blocks \n {e}")
-
-    def sendPortlist(self):
-        nodeDB = NodeDB()
-        portLists = nodeDB.read()
-
-        portLst = Addr(portLists)
-        envelope = NetworkEnvelope(portLst.command, portLst.serialize())
-        self.conn.sendall(envelope.serialize())
-
-    def sendSecondryChain(self):
-        TempSecChain = dict(self.secondryChain)
+            self.is_syncing = True
         
-        for blockHash in TempSecChain:
-            envelope = NetworkEnvelope(TempSecChain[blockHash].command, TempSecChain[blockHash].serialize())
-            self.conn.sendall(envelope.serialize())
-
-
-    def sendFinishedMessage(self, conn):
-        MessageFinish = FinishedSending()
-        envelope = NetworkEnvelope(MessageFinish.command, MessageFinish.serialize())
-        conn.sendall(envelope.serialize())
-
-    def sendBlock(self, blockstoSend, conn):
-        for block in blockstoSend:
-            cblock = Block.to_obj(block)
-            envelope = NetworkEnvelope(cblock.command, cblock.serialize())
-            conn.sendall(envelope.serialize())
-            print(f"Block Sent {cblock.Height}")
-
-    def fetchBlocksFromBlockchain(self, start_Block):
-        fromBlocksOnwards = start_Block.hex()
-
-        blocksToSend = []
-        blockchain = BlockchainDB()
-        blocks = blockchain.read()
-
-        foundBlock = False 
-        for block in blocks:
-            if block['BlockHeader']['blockHash'] == fromBlocksOnwards:
-                foundBlock = True
-                continue
-        
-            if foundBlock:
-                blocksToSend.append(block)
-        
-        return blocksToSend
-
-    def connectToHost(self, localport, port, bindPort = None):
-        self.connect = Node(self.host, port)
-
-        if bindPort:
-            self.socket = self.connect.connect(localport, bindPort)
+        print("Starting blockchain synchronization...")
+        last_block = self.db.lastBlock()
+        if not last_block:
+            start_block_hash = b'\x00' * 32
         else:
-            self.socket = self.connect.connect(localport)
+            start_block_hash = bytes.fromhex(last_block['BlockHeader']['blockHash'])
+        
+        getheaders_msg = GetHeaders(start_block=start_block_hash)
+        self.send_message(conn, getheaders_msg)
 
-        self.stream = self.socket.makefile('rb', None)
+
+    def handle_getheaders(self, conn, getheaders_msg):
+        print(f"Received getheaders request starting from {getheaders_msg.start_block.hex()}")
+        db = BlockchainDB()
+        all_blocks = db.read()
+        
+        headers_to_send = []
+        found_start = False
+        for block_data in all_blocks:
+            block_hash = block_data['BlockHeader']['blockHash']
+            if block_hash == getheaders_msg.start_block.hex():
+                found_start = True
+                continue 
+            
+            if found_start:
+                header = Block.to_obj(block_data).BlockHeader
+                headers_to_send.append(header)
+                if len(headers_to_send) >= MAX_HEADERS_TO_SEND:
+                    break
+        
+        if headers_to_send:
+            print(f"Sending {len(headers_to_send)} headers to peer")
+            headers_msg = Headers(headers_to_send)
+            self.send_message(conn, headers_msg)
+        else:
+            print("No new headers to send to this peer")
+
+
+    def handle_headers(self, conn, headers_msg):
+        """Traite une liste de headers reçus, les valide et demande les blocs."""
+        if not headers_msg.headers:
+            print("Finished headers synchronization.")
+            with self.sync_lock:
+                self.is_syncing = False
+            return
+
+        print(f"Received {len(headers_msg.headers)} headers. Validating...")
+        
+        last_known_block = self.db.lastBlock()
+        
+        if not last_known_block:
+            prev_block_hash = headers_msg.headers[0].prevBlockHash.hex()
+        else:
+            prev_block_hash = last_known_block['BlockHeader']['blockHash']
+            
+        headers_to_request = []
+        for header in headers_msg.headers:
+            if header.prevBlockHash.hex() != prev_block_hash:
+                print(f"Header validation failed: Discontinuity in chain. Expected prev_hash {prev_block_hash}, but got {header.prevBlockHash.hex()}")
+                with self.sync_lock:
+                    self.is_syncing = False
+                return
+            if not check_pow(header):
+                print("Header validation failed: Invalid Proof of Work")
+                with self.sync_lock:
+                    self.is_syncing = False
+                return
+            
+            headers_to_request.append(header)
+            prev_block_hash = header.generateBlockHash()
+
+        if headers_to_request:
+            print(f"Headers are valid. Requesting {len(headers_to_request)} blocks...")
+            items_to_get = [(INV_TYPE_BLOCK, bytes.fromhex(h.generateBlockHash())) for h in headers_to_request]
+            getdata_msg = GetData(items_to_get)
+            self.send_message(conn, getdata_msg)
     
-    def publishBlock(self,block):
-        with self.peers_lock:
-            peers_list = list(self.peers)
 
-        for peer_id in peers_list:
-            try:
-                host, port_str = peer_id.rsplit(':', 1)
-                port = int(port_str)
-                
-                if self.host == host and self.port == port:
-                    continue
-
-                print(f"Publishing block to {peer_id}")
-                node = Node(host, port)
-                sock = node.connect(self.port)
-                self.send_message(sock, block)
-                sock.close()
-            except Exception as e:
-                print(f"Failed to publish block to {peer_id}. Error: {e}")
-
-    def publishTx(self, Tx):
-        with self.peers_lock:
-            peers_list = list(self.peers)
+    def handle_inv(self, conn, inv_msg):
+        """Traite un message d'inventaire et demande les données inconnues."""
+        items_to_get = []
+        for item_type, item_hash in inv_msg.items:
+            if item_type == INV_TYPE_TX:
+                if item_hash.hex() not in self.mempool:
+                    items_to_get.append((INV_TYPE_TX, item_hash))
+            elif item_type == INV_TYPE_BLOCK:
+                # Une vraie implémentation utiliserait un index de hashs.
+                block_exists = False
+                all_blocks = self.db.read()
+                for block_data in all_blocks:
+                    if block_data['BlockHeader']['blockHash'] == item_hash.hex():
+                        block_exists = True
+                        break
+                if not block_exists:
+                    items_to_get.append((INV_TYPE_BLOCK, item_hash))
         
-        for peer_id in peers_list:
-            try:
-                host, port_str = peer_id.rsplit(':', 1)
-                port = int(port_str)
-                
-                if self.host == host and self.port == port:
-                    continue
+        if items_to_get:
+            getdata_msg = GetData(items_to_get)
+            self.send_message(conn, getdata_msg)
 
-                print(f"Publishing Tx to {peer_id}")
-                node = Node(host, port)
-                sock = node.connect(self.port)
-                self.send_message(sock, Tx)
-                sock.close()
-            except Exception as e:
-                print(f"Failed to publish Tx to {peer_id}. Error: {e}")
-     
-    def startDownload(self, localport,  port, bindPort):
-        lastBlock = BlockchainDB().lastBlock()
 
-        if not lastBlock:
-            lastBlockHeader = "0000a889a4f86b9207c092684b5ecfe250a78c12bbd36c30a1665744a12bfed6"
+    def handle_getdata(self, conn, getdata_msg):
+        for item_type, item_hash in getdata_msg.items:
+            if item_type == INV_TYPE_TX:
+                tx_id = item_hash.hex()
+                if tx_id in self.mempool:
+                    tx_obj = self.mempool[tx_id]
+                    tx_msg = Tx(tx_obj.version, tx_obj.tx_ins, tx_obj.tx_outs, tx_obj.locktime)
+                    self.send_message(conn, tx_msg)
+            elif item_type == INV_TYPE_BLOCK:
+                block_hash_hex = item_hash.hex()
+                # On doit chercher le bloc dans la DB
+                # C'est inefficace sans index, mais fonctionnel pour la démo
+                all_blocks = self.db.read()
+                for block_data in all_blocks:
+                    if block_data['BlockHeader']['blockHash'] == block_hash_hex:
+                        block_obj = Block.to_obj(block_data)
+                        block_msg = Block(block_obj.Height, block_obj.Blocksize, block_obj.BlockHeader, block_obj.Txcount, block_obj.Txs)
+                        self.send_message(conn, block_msg)
+                        break
+
+
+    def handle_tx(self, tx_obj, origin_peer_socket=None):
+        tx_id = tx_obj.id()
+        if tx_id in self.mempool:
+            return 
+
+        if self.validator.validate_transaction(tx_obj):
+            print(f"Transaction {tx_id[:10]}... is valid. Adding to mempool.")
+            self.mempool[tx_id] = tx_obj
+            self.broadcast_tx(tx_obj, origin_peer_socket)
         else:
-            lastBlockHeader = lastBlock['BlockHeader']['blockHash']
+            print(f"Transaction {tx_id[:10]}... is invalid. Discarding.")
+
+
+    def handle_block(self, block_obj, origin_peer_socket=None):
+        """Traite un bloc complet reçu du réseau."""
+        block_hash = block_obj.BlockHeader.generateBlockHash()
+        print(f"Received block {block_obj.Height} ({block_hash[:10]}...). Validating...")
         
-        startBlock = bytes.fromhex(lastBlockHeader)
+        if self.validator.validate_block(block_obj, self.db):
+            block_to_save = block_obj.to_dict()
+            self.db.add_blocks([block_to_save])
+            print(f"Block {block_obj.Height} successfully added to the blockchain")
+            
+            print(f"Updating node state for block {block_obj.Height}...")
+            spent_outputs = []
+            for tx in block_obj.Txs[1:]: 
+                for tx_in in tx.tx_ins:
+                    spent_outputs.append([tx_in.prev_tx, tx_in.prev_index])
+            
+            self.utxo_manager.remove_spent_utxos(spent_outputs)
+            self.utxo_manager.add_new_utxos(block_obj.Txs)
+            self.mempool_manager.remove_transactions([bytes.fromhex(tx.id()) for tx in block_obj.Txs])
+            print(f"Node state updated.")
+            
+            self.broadcast_block(block_obj, origin_peer_socket)
+            
+            if self.newBlockAvailable is not None:
+                self.newBlockAvailable.clear() 
+                self.newBlockAvailable[block_hash] = True
+        else:
+            print(f"Block {block_obj.Height} is invalid. Discarding.")
 
-        getHeaders = requestBlock(startBlock=startBlock)
-        self.connectToHost(localport, port, bindPort)
-        self.connect.send(getHeaders)
 
-        while True:    
-            envelope = NetworkEnvelope.parse(self.stream)
-            if envelope.command == b"Finished":
-                print(f"All Blocks Received")
-                self.socket.close()
-                break
+    def cleanup_peer_connection(self, peer_id, conn):
+        if conn:
+            conn.close()
+        with self.peers_lock:
+            if peer_id in self.peers:
+                del self.peers[peer_id]
+        if peer_id in self.peer_handshake_status:
+            del self.peer_handshake_status[peer_id]
+        print(f"Connection with {peer_id} closed and cleaned up.")
 
-            if envelope.command == Addr.command:
-                addr_message = Addr.parse(envelope.stream())
-                for host, port in addr_message.addresses:
-                    self.connect_to_peer(host, port)
 
-            if envelope.command == b'block':
-                blockObj = Block.parse(envelope.stream())
-                BlockHeaderObj = BlockHeader(blockObj.BlockHeader.version,
-                            blockObj.BlockHeader.prevBlockHash, 
-                            blockObj.BlockHeader.merkleRoot, 
-                            blockObj.BlockHeader.timestamp,
-                            blockObj.BlockHeader.bits,
-                            blockObj.BlockHeader.nonce)
-                
-                if BlockHeaderObj.validateBlock():
-                    for idx, tx in enumerate(blockObj.Txs):
-                        tx.TxId = tx.id()
-                        blockObj.Txs[idx] = tx.to_dict()
-                
-                    BlockHeaderObj.blockHash = BlockHeaderObj.generateBlockHash()
-                    BlockHeaderObj.prevBlockHash = BlockHeaderObj.prevBlockHash.hex()
-                    BlockHeaderObj.merkleRoot = BlockHeaderObj.merkleRoot.hex()
-                    BlockHeaderObj.nonce =  little_endian_to_int(BlockHeaderObj.nonce)
-                    BlockHeaderObj.bits = BlockHeaderObj.bits.hex()
-                    blockObj.BlockHeader = BlockHeaderObj
-                    BlockchainDB().write([blockObj.to_dict()])
-                    print(f"Block Received - {blockObj.Height}")
-                else:
-                    self.secondryChain[BlockHeaderObj.generateBlockHash()] = blockObj
-                
+    def broadcast_inv(self, inv_msg, origin_peer_socket=None):
+        """Envoie un message 'inv' à tous les pairs connectés, sauf à l'origine."""
+        with self.peers_lock:
+            peers_sockets = list(self.peers.values())
+
+        for peer_socket in peers_sockets:
+            if peer_socket != origin_peer_socket:
+                try:
+                    self.send_message(peer_socket, inv_msg)
+                except Exception as e:
+                    print(f"Failed to send inv to a peer. Error: {e}")
+
+    def broadcast_tx(self, tx_obj, origin_peer_socket=None):
+        """Annonce une nouvelle transaction au réseau."""
+        tx_hash = bytes.fromhex(tx_obj.id())
+        inv_msg = Inv(items=[(INV_TYPE_TX, tx_hash)])
+        print(f"Broadcasting transaction {tx_obj.id()[:10]}...")
+        self.broadcast_inv(inv_msg, origin_peer_socket)
+
+    def broadcast_block(self, block_obj, origin_peer_socket=None):
+        """Annonce un nouveau bloc au réseau."""
+        block_hash = bytes.fromhex(block_obj.BlockHeader.generateBlockHash())
+        inv_msg = Inv(items=[(INV_TYPE_BLOCK, block_hash)])
+        print(f"Broadcasting block {block_obj.Height}...")
+        self.broadcast_inv(inv_msg, origin_peer_socket)
