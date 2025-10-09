@@ -3,9 +3,9 @@ from src.core.primitives.blockheader import BlockHeader
 from src.core.net.connection import Node
 from src.database.db_manager import BlockchainDB, NodeDB
 from src.core.primitives.transaction import Tx
-from src.core.net.protocol import NetworkEnvelope, requestBlock, FinishedSending, portlist
+from src.core.net.protocol import NetworkEnvelope, requestBlock, FinishedSending, Addr, GetAddr
 from src.utils.serialization import little_endian_to_int
-from threading import Thread
+from threading import Thread, Lock
 
 class syncManager:
     def __init__(self, host, port, newBlockAvailable = None, secondryChain = None, Mempool = None):
@@ -15,24 +15,43 @@ class syncManager:
         self.secondryChain = secondryChain
         self.Mempool = Mempool
         self.peers = set()
+        self.peers_lock = Lock()
+
+    def send_message(self, sock, message):
+        envelope = NetworkEnvelope(message.command, message.serialize())
+        sock.sendall(envelope.serialize())
 
     def connect_to_peer(self, host, port):
         peer_id = f"{host}:{port}"
-        if peer_id in self.peers or (self.host == host and self.port == port):
-            return
+
+        with self.peers_lock:
+            if peer_id in self.peers or (self.host == host and self.port == port):
+                return
 
         try:
             print(f"Attempting to connect to {peer_id}...")
             peer_node = Node(host, port)
             client_socket = peer_node.connect(self.port) 
-            self.peers.add(peer_id)
 
+            with self.peers_lock:
+                self.peers.add(peer_id)
+
+            my_address_message = Addr(addresses=[(self.host, self.port)])
+            self.send_message(client_socket, my_address_message)
+            print(f"Announced my address to {peer_id}")
+
+            getaddr_msg = GetAddr()
+            self.send_message(client_socket, getaddr_msg)
             print(f"Successfully connected to {peer_id}")
+
             handler_thread = Thread(target=self.handleConnection, args=(client_socket, (host, port)))
             handler_thread.start()
 
         except Exception as e:
             print(f"Failed to connect to peer {peer_id}. Error: {e}")
+            with self.peers_lock:
+                if peer_id in self.peers:
+                    self.peers.remove(peer_id)
 
 
     def spinUpTheServer(self):
@@ -47,18 +66,41 @@ class syncManager:
             handleConn.start()
 
     def handleConnection(self, conn, addr):
-        print(f"Handling new connection from {addr}")
+        peer_id_str = f"{addr[0]}:{addr[1]}"
+        print(f"Handling new connection from {peer_id_str}")
         stream = None
         try:
-            self.addNode(addr)
             stream = conn.makefile('rb', None)
             
             while True:
                 envelope = NetworkEnvelope.parse(stream)
                 
-                print(f"Received command '{envelope.command.decode()}' from {addr}")
+                print(f"Received command '{envelope.command.decode()}' from {peer_id_str}")
 
-                if envelope.command == b'Tx':
+                if envelope.command == GetAddr.command:
+                    print(f"Received getaddr from {peer_id_str}. Sending known peers...")
+                    known_peers = []
+                    with self.peers_lock:
+                        for peer_id in self.peers:
+                            host, port_str = peer_id.rsplit(':', 1)
+                            known_peers.append((host, int(port_str)))
+                        
+                    addr_msg = Addr(known_peers)
+                    self.send_message(conn, addr_msg)
+
+                elif envelope.command == Addr.command:
+                    addr_message = Addr.parse(envelope.stream())
+                    print(f"Received {len(addr_message.addresses)} peer addresses from {peer_id_str}")
+                    for new_host, new_port in addr_message.addresses:
+                        peer_id_to_add = f"{new_host}:{new_port}"
+                        with self.peers_lock:
+                            if peer_id_to_add not in self.peers:
+                                print(f"Discovered new peer: {peer_id_to_add}")
+                                self.peers.add(peer_id_to_add)
+                        conn_thread = Thread(target=self.connect_to_peer, args=(new_host, new_port))
+                        conn_thread.start()
+
+                elif envelope.command == b'Tx':
                     Transaction = Tx.parse(envelope.stream())
                     Transaction.TxId = Transaction.id()
                     if Transaction.TxId not in self.Mempool:
@@ -81,15 +123,12 @@ class syncManager:
                 elif envelope.command == requestBlock.command:
                     start_block, end_block = requestBlock.parse(envelope.stream())
                     print(f"Peer {addr} requested blocks from {start_block.hex()[:10]}...")
-                    # Modify logic to use "conn"
                     # self.sendBlockToRequestor(start_block) 
-
-                # Add 'getaddr', 'addr', 'inv', etc for future msg
 
         except (IOError, ConnectionResetError) as e:
             print(f"Connection with {addr} was closed by the peer")
         except Exception as e:
-            print(f"💥 An error occurred with peer {addr}. Closing connection. Error: {e}")
+            print(f"An error occurred with peer {addr}. Closing connection. Error: {e}")
         finally:
             if conn:
                 conn.close()
@@ -115,13 +154,13 @@ class syncManager:
             print(f"Could not add node {addr} to DB. Error: {e}")
 
 
-    def sendBlockToRequestor(self, start_block):
+    def sendBlockToRequestor(self, start_block, conn):
         blocksToSend = self.fetchBlocksFromBlockchain(start_block)
 
         try:
             self.sendBlock(blocksToSend)
-            self.sendSecondryChain()
-            self.sendPortlist()
+            #self.sendSecondryChain()
+            #self.sendPortlist()
             self.sendFinishedMessage()
         except Exception as e:
             print(f"Unable to send the blocks \n {e}")
@@ -130,7 +169,7 @@ class syncManager:
         nodeDB = NodeDB()
         portLists = nodeDB.read()
 
-        portLst = portlist(portLists)
+        portLst = Addr(portLists)
         envelope = NetworkEnvelope(portLst.command, portLst.serialize())
         self.conn.sendall(envelope.serialize())
 
@@ -142,16 +181,16 @@ class syncManager:
             self.conn.sendall(envelope.serialize())
 
 
-    def sendFinishedMessage(self):
+    def sendFinishedMessage(self, conn):
         MessageFinish = FinishedSending()
         envelope = NetworkEnvelope(MessageFinish.command, MessageFinish.serialize())
-        self.conn.sendall(envelope.serialize())
+        conn.sendall(envelope.serialize())
 
-    def sendBlock(self, blockstoSend):
+    def sendBlock(self, blockstoSend, conn):
         for block in blockstoSend:
             cblock = Block.to_obj(block)
             envelope = NetworkEnvelope(cblock.command, cblock.serialize())
-            self.conn.sendall(envelope.serialize())
+            conn.sendall(envelope.serialize())
             print(f"Block Sent {cblock.Height}")
 
     def fetchBlocksFromBlockchain(self, start_Block):
@@ -182,12 +221,45 @@ class syncManager:
 
         self.stream = self.socket.makefile('rb', None)
     
-    def publishBlock(self, localport, port, block):
-        self.connectToHost(localport, port)
-        self.connect.send(block)
+    def publishBlock(self,block):
+        with self.peers_lock:
+            peers_list = list(self.peers)
+
+        for peer_id in peers_list:
+            try:
+                host, port_str = peer_id.rsplit(':', 1)
+                port = int(port_str)
+                
+                if self.host == host and self.port == port:
+                    continue
+
+                print(f"Publishing block to {peer_id}")
+                node = Node(host, port)
+                sock = node.connect(self.port)
+                self.send_message(sock, block)
+                sock.close()
+            except Exception as e:
+                print(f"Failed to publish block to {peer_id}. Error: {e}")
 
     def publishTx(self, Tx):
-        self.connect.send(Tx)
+        with self.peers_lock:
+            peers_list = list(self.peers)
+        
+        for peer_id in peers_list:
+            try:
+                host, port_str = peer_id.rsplit(':', 1)
+                port = int(port_str)
+                
+                if self.host == host and self.port == port:
+                    continue
+
+                print(f"Publishing Tx to {peer_id}")
+                node = Node(host, port)
+                sock = node.connect(self.port)
+                self.send_message(sock, Tx)
+                sock.close()
+            except Exception as e:
+                print(f"Failed to publish Tx to {peer_id}. Error: {e}")
      
     def startDownload(self, localport,  port, bindPort):
         lastBlock = BlockchainDB().lastBlock()
@@ -206,19 +278,14 @@ class syncManager:
         while True:    
             envelope = NetworkEnvelope.parse(self.stream)
             if envelope.command == b"Finished":
-                blockObj = FinishedSending.parse(envelope.stream())
                 print(f"All Blocks Received")
                 self.socket.close()
                 break
 
-            if envelope.command == b'portlist':
-                ports = portlist.parse(envelope.stream())
-                nodeDb = NodeDB()
-                portlists = nodeDb.read()
-
-                for port in ports:
-                    if port not in portlists:
-                        nodeDb.write([port])
+            if envelope.command == Addr.command:
+                addr_message = Addr.parse(envelope.stream())
+                for host, port in addr_message.addresses:
+                    self.connect_to_peer(host, port)
 
             if envelope.command == b'block':
                 blockObj = Block.parse(envelope.stream())

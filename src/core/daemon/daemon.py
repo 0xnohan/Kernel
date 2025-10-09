@@ -15,8 +15,6 @@ from src.core.kmain.utxo_manager import UTXOManager
 from src.utils.config_loader import load_config
 from threading import Thread
 
-
-
 def main():
     parser = argparse.ArgumentParser(description="Kernel Daemon")
     parser.add_argument("--mine", action="store_true", help="Start mining on launch")
@@ -36,26 +34,30 @@ def main():
         secondaryChain = manager.dict()
         miningProcessManager = manager.dict({'is_mining': False, 'shutdown_requested': False})
 
-        # P2P
+        # P2P Sync Manager
         sync = syncManager(host, p2p_port, newBlockAvailable, secondaryChain, mempool)
-        processServeur = Process(target=sync.spinUpTheServer)
-        processServeur.start()
+        
+        # P2P Server Thread
+        P2PserverThread = Thread(target=sync.spinUpTheServer)
+        P2PserverThread.daemon = True 
+        P2PserverThread.start()
         print(f"P2P server started on port {p2p_port}")
 
-        # API
+        # API Process
         processAPI = Process(target=web_main, args=(utxos, mempool, api_port, p2p_port))
         processAPI.start()
         print(f"API server started on port {api_port}")
         
-        # RPC
+        # RPC Process
         processRPC = Process(target=rpcServer, args=(host, rpc_port, utxos, mempool, miningProcessManager))
         processRPC.start()
 
-        # Init
+        # Init UTXO set
         utxo_manager = UTXOManager(utxos)
         print("Initializing UTXO set...")
         utxo_manager.build_utxos_from_db()
         
+        # Init Blockchain
         mainBlockchain = Blockchain(utxos, mempool, newBlockAvailable, secondaryChain, host, p2p_port)
         if not mainBlockchain.fetch_last_block():
             mainBlockchain.GenesisBlock()
@@ -65,14 +67,15 @@ def main():
         config = load_config()
         if 'SEED_NODES' in config:
             print("Connecting to seed nodes...")
-            client_sync = syncManager(host, p2p_port)
             for key, address in config['SEED_NODES'].items():
                 try:
-                    peer_host, peer_port = address.split(':')
-                    conn_thread = Thread(target=client_sync.connect_to_peer, args=(peer_host, int(peer_port)))
+                    peer_host, peer_port_str = address.split(':')
+                    peer_port = int(peer_port_str)
+                    # Use the main sync manager instance to connect
+                    conn_thread = Thread(target=sync.connect_to_peer, args=(peer_host, peer_port))
                     conn_thread.start()
                 except Exception as e:
-                    print(f"Invalid seed node address format: {address}")
+                    print(f"Invalid seed node address format or connection failed: {address} ({e})")
         
         mining_process = None
         if args.mine:
@@ -94,7 +97,6 @@ def main():
         except KeyboardInterrupt:
             print("\nShutting down daemon...")
         finally:
-            processServeur.terminate()
             processAPI.terminate()
             processRPC.terminate()
             if mining_process and mining_process.is_alive():
