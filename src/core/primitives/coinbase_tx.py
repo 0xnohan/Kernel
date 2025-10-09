@@ -33,6 +33,9 @@ class CoinbaseTx:
         return max(0, int(reward_float))
 
     def CoinbaseTransaction(self, fees):
+        if not self.minerAddress:
+            print("Miner address not loaded, cannot create coinbase transaction.")
+            return None
         tx_ins = [TxIn(
             prev_tx=b"\0" * 32, 
             prev_index=0xFFFFFFFF,

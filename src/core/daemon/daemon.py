@@ -18,6 +18,7 @@ from src.utils.config_loader import load_config
 from threading import Thread
 from src.core.kmain.genesis import create_genesis_block
 from src.database.db_manager import BlockchainDB
+from src.core.kmain.validator import Validator
 
 def handle_mined_blocks(mined_block_queue, sync_manager, utxo_manager, mempool_manager):
     """
