@@ -8,6 +8,7 @@ from src.core.client.send import Send
 from src.database.db_manager import AccountDB
 from src.utils.serialization import decode_base58
 from src.core.kmain.constants import FEE_RATE_NORMAL
+from src.core.client.wallet import wallet as WalletClass
 
 
 def calculate_wallet_balances(wallets, utxos):
@@ -62,7 +63,6 @@ def handleRpcCommand(command, utxos, mempool, miningProcessManager, new_tx_queue
         fee_rate = params.get('fee_rate', FEE_RATE_NORMAL)
         send_handler = Send(params['from'], params['to'], float(params['amount']), fee_rate, utxos, mempool)
         tx = send_handler.prepareTransaction()
-        
         if tx and new_tx_queue:
             new_tx_queue.put(tx)
             return {"status": "success", "message": "Transaction sent to daemon for processing", "txid": tx.id()}
@@ -70,7 +70,7 @@ def handleRpcCommand(command, utxos, mempool, miningProcessManager, new_tx_queue
             return {"status": "error", "message": "Failed to create transaction. Check balance and addresses."}
         else:
             return {"status": "error", "message": "Cannot broadcast transaction, daemon queue not available."}
-    
+        
     elif cmd == 'get_wallets':
         try:
             all_wallets = AccountDB().get_all_wallets()
@@ -95,13 +95,10 @@ def rpcServer(host, rpcPort, utxos, mempool, miningProcessManager, new_tx_queue=
             conn, addr = s.accept()
             with conn:
                 data = conn.recv(1024)
-                if not data:
-                    continue
-                
+                if not data: continue
                 try:
                     command = json.loads(data.decode('utf-8'))
                     response = handleRpcCommand(command, utxos, mempool, miningProcessManager, new_tx_queue)
                 except Exception as e:
                     response = {"status": "error", "message": f"An unexpected error occurred: {e}"}
-
                 conn.sendall(json.dumps(response).encode('utf-8'))

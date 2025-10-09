@@ -4,7 +4,7 @@ from src.utils.serialization import (
     bytes_needed,
     little_endian_to_int,
     encode_varint,
-    read_varint
+    read_varint, decode_base58
 )
 from src.utils.crypto_hash import hash256
 
@@ -128,31 +128,48 @@ class Tx:
         return cls(item['version'], TxInList, TxOutList, item['locktime'])
                 
     def to_dict(self):
-        """RESTAURATION DE L'ANCIENNE MÉTHODE DE CONVERSION"""
-        # Cette méthode modifie l'objet en place, comme dans votre code original.
-        for tx_in in self.tx_ins:
-            if self.is_coinbase():
-                # Gère le cas spécial de la hauteur de bloc dans la coinbase
-                if tx_in.script_sig.cmds and isinstance(tx_in.script_sig.cmds[0], bytes):
-                     tx_in.script_sig.cmds[0] = little_endian_to_int(tx_in.script_sig.cmds[0])
-
-            tx_in.prev_tx = tx_in.prev_tx.hex()
-            for i, cmd in enumerate(tx_in.script_sig.cmds):
-                if isinstance(cmd, bytes):
-                    tx_in.script_sig.cmds[i] = cmd.hex()
-            tx_in.script_sig = tx_in.script_sig.__dict__
+        # --- CORRECTION APPLIQUÉE ICI ---
+        # On commence par récupérer le dictionnaire de base de l'objet
+        result = self.__dict__.copy()
         
-        for tx_out in self.tx_outs:
-            for i, cmd in enumerate(tx_out.script_pubkey.cmds):
+        # On s'assure que le TxId est toujours présent
+        result['TxId'] = self.id()
+        
+        # On convertit les objets internes en dictionnaires ou formats sérialisables
+        result['tx_ins'] = []
+        for tx_in in self.tx_ins:
+            tx_in_dict = tx_in.__dict__.copy()
+            tx_in_dict['prev_tx'] = tx_in.prev_tx.hex()
+            
+            script_sig_dict = tx_in.script_sig.__dict__.copy()
+            # Convertir les bytes en hex pour la sérialisation JSON
+            cmds_hex = []
+            for cmd in script_sig_dict['cmds']:
                 if isinstance(cmd, bytes):
-                    tx_out.script_pubkey.cmds[i] = cmd.hex()
-            tx_out.script_pubkey = tx_out.script_pubkey.__dict__
+                    cmds_hex.append(cmd.hex())
+                else: # Garder les opcodes (int) tels quels
+                    cmds_hex.append(cmd)
+            script_sig_dict['cmds'] = cmds_hex
+            tx_in_dict['script_sig'] = script_sig_dict
+            
+            result['tx_ins'].append(tx_in_dict)
 
-        # Convertir les listes d'objets en listes de dictionnaires
-        self.tx_ins = [tx_in.__dict__ for tx_in in self.tx_ins]
-        self.tx_outs = [tx_out.__dict__ for tx_out in self.tx_outs]
+        result['tx_outs'] = []
+        for tx_out in self.tx_outs:
+            tx_out_dict = tx_out.__dict__.copy()
+            script_pubkey_dict = tx_out.script_pubkey.__dict__.copy()
+            # Convertir les bytes en hex
+            cmds_hex = []
+            for cmd in script_pubkey_dict['cmds']:
+                if isinstance(cmd, bytes):
+                    cmds_hex.append(cmd.hex())
+                else:
+                    cmds_hex.append(cmd)
+            script_pubkey_dict['cmds'] = cmds_hex
+            tx_out_dict['script_pubkey'] = script_pubkey_dict
+            result['tx_outs'].append(tx_out_dict)
 
-        return self.__dict__
+        return result
     
 class TxIn:
     def __init__(self, prev_tx, prev_index, script_sig=None, sequence=0xFFFFFFFF):

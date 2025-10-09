@@ -94,9 +94,18 @@ class Miner:
                     block_candidate.Txs
                 )
 
-                block_to_save_obj = copy.deepcopy(new_block)
-                block_to_save_dict = block_to_save_obj.to_dict()
-                self.db.write([block_to_save_dict])
+                # 3. ÉCRIRE LE BLOC EN BASE DE DONNÉES (logique restaurée)
+                # C'est l'étape cruciale pour éviter la race condition.
+                mined_header.to_hex()
+                tx_json_list = [tx.to_dict() for tx in new_block.Txs]
+                block_to_save = {
+                    "Height": new_block.Height, "Blocksize": new_block.Blocksize,
+                    "BlockHeader": mined_header.__dict__, "TxCount": len(tx_json_list),
+                    "Txs": tx_json_list
+                }
+                self.db.write([block_to_save])
+                
+                # 4. Envoyer le bloc au daemon (qui n'aura plus qu'à diffuser)
                 self.mined_block_queue.put(new_block)
 
     def create_block_template(self, height, prev_hash):

@@ -15,7 +15,6 @@ from src.core.daemon.rpc_server import rpcServer
 from src.core.kmain.utxo_manager import UTXOManager
 from src.core.kmain.mempool import MempoolManager
 from src.utils.config_loader import load_config
-from src.core.kmain.validator import Validator
 from threading import Thread
 from src.core.kmain.genesis import create_genesis_block
 from src.database.db_manager import BlockchainDB
@@ -38,29 +37,9 @@ def handle_mined_blocks(mined_block_queue, sync_manager, utxo_manager, mempool_m
         utxo_manager.add_new_utxos(mined_block.Txs)
         mempool_manager.remove_transactions([bytes.fromhex(tx.id()) for tx in mined_block.Txs])
         print("Daemon updated UTXO set and mempool.")
+
+        # Et il diffuse le bloc au réseau
         sync_manager.broadcast_block(mined_block)
-
-
-def handle_new_transactions(new_tx_queue, sync_manager, mempool, utxos):
-    """
-    Écoute les transactions créées localement, les valide,
-    les ajoute au mempool et les diffuse.
-    """
-    validator = Validator(utxos, mempool)
-    while True:
-        new_tx = new_tx_queue.get()
-        tx_id = new_tx.id()
-        if tx_id in mempool:
-            continue
-
-        print(f"Daemon received new local transaction {tx_id[:10]}...")
-        if validator.validate_transaction(new_tx):
-            mempool[tx_id] = new_tx
-            print(f"Local transaction {tx_id[:10]}... is valid, broadcasting...")
-            sync_manager.broadcast_tx(new_tx)
-        else:
-            print(f"Local transaction {tx_id[:10]}... is invalid, discarding.")
-
 
 def main():
     parser = argparse.ArgumentParser(description="Kernel Daemon")
@@ -82,7 +61,6 @@ def main():
         
         # Création d'une Queue pour la communication Miner -> Daemon
         mined_block_queue = Queue()
-        new_tx_queue = Queue()
 
         # Instanciation des managers
         utxo_manager = UTXOManager(utxos)
@@ -101,20 +79,25 @@ def main():
         print(f"API server started on port {api_port}")
         
         # Lancement du serveur RPC en processus séparé
-        processRPC = Process(target=rpcServer, args=(host, rpc_port, utxos, mempool, mining_process_manager, new_tx_queue))
+        processRPC = Process(target=rpcServer, args=(host, rpc_port, utxos, mempool, mining_process_manager))
         processRPC.start()
 
         # Initialisation de la base de données
         db = BlockchainDB()
         if not db.lastBlock():
-            if args.mine:
-                print("No blockchain found. Creating genesis block as the first node...")
-                genesis = create_genesis_block()
-                block_to_save = genesis.to_dict()
-                db.write([block_to_save])
-                print("Genesis block written to database.")
-            else:
-                print("No blockchain found. Waiting for blocks from the network...")
+            print("No blockchain found. Creating genesis block...")
+            genesis = create_genesis_block()
+            
+            # On écrit le genesis directement ici, une seule fois au démarrage
+            genesis.BlockHeader.to_hex()
+            tx_json_list = [tx.to_dict() for tx in genesis.Txs]
+            block_to_save = {
+                "Height": genesis.Height, "Blocksize": genesis.Blocksize,
+                "BlockHeader": genesis.BlockHeader.__dict__, "TxCount": len(tx_json_list),
+                "Txs": tx_json_list
+            }
+            db.write([block_to_save])
+            print("Genesis block written to database.")
 
         print("Initializing UTXO set...")
         utxo_manager.build_utxos_from_db()
@@ -123,10 +106,6 @@ def main():
         block_handler_thread = Thread(target=handle_mined_blocks, args=(mined_block_queue, sync_manager, utxo_manager, mempool_manager))
         block_handler_thread.daemon = True
         block_handler_thread.start()
-
-        tx_handler_thread = Thread(target=handle_new_transactions, args=(new_tx_queue, sync_manager, mempool, utxos))
-        tx_handler_thread.daemon = True
-        tx_handler_thread.start()
 
         # Laisser un peu de temps au serveur P2P pour démarrer avant de se connecter aux seeds
         time.sleep(2) 

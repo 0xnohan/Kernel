@@ -1,10 +1,10 @@
+# src/core/primitives/block.py
+
 from src.core.primitives.blockheader import BlockHeader
 from src.core.primitives.transaction import Tx
 from src.utils.serialization import (
-    little_endian_to_int,
-    int_to_little_endian,
-    encode_varint,
-    read_varint
+    little_endian_to_int, int_to_little_endian,
+    encode_varint, read_varint
 )
 
 class Block:
@@ -23,14 +23,11 @@ class Block:
         BlockSize = little_endian_to_int(s.read(4))
         blockHeader = BlockHeader.parse(s)
         numTxs = read_varint(s)
-
         Txs = []
-
         for _ in range(numTxs):
             tx = Tx.parse(s)
             setattr(tx, 'TxId', tx.id()) 
             Txs.append(tx)
-            
         return cls(Height, BlockSize, blockHeader, numTxs, Txs)
         
     def serialize(self):
@@ -38,34 +35,30 @@ class Block:
         result += int_to_little_endian(self.Blocksize, 4)
         result += self.BlockHeader.serialize()
         result += encode_varint(len(self.Txs))
-
         for tx in self.Txs:
             result += tx.serialize()
-        
         return result 
 
     @classmethod
-    def to_obj(cls, lastblock):
-        block = BlockHeader(lastblock['BlockHeader']['version'],
-                    bytes.fromhex(lastblock['BlockHeader']['prevBlockHash']),
-                    bytes.fromhex(lastblock['BlockHeader']['merkleRoot']),
-                    lastblock['BlockHeader']['timestamp'],
-                    bytes.fromhex(lastblock['BlockHeader']['bits']))
+    def to_obj(cls, block_dict):
+        header_dict = block_dict['BlockHeader']
+        block_header = BlockHeader(
+            header_dict['version'], bytes.fromhex(header_dict['prevBlockHash']),
+            bytes.fromhex(header_dict['merkleRoot']), header_dict['timestamp'],
+            bytes.fromhex(header_dict['bits']), header_dict['nonce']
+        )
+        block_header.blockHash = header_dict['blockHash']
         
-        block.nonce = int_to_little_endian(lastblock['BlockHeader']['nonce'], 4)
-
         Transactions = []
-        for tx in lastblock['Txs']:
-            Transactions.append(Tx.to_obj(tx))
+        for tx_dict in block_dict['Txs']:
+            tx_obj = Tx.to_obj(tx_dict)
+            setattr(tx_obj, 'TxId', tx_dict['TxId'])
+            Transactions.append(tx_obj)
         
-        block.BlockHash = bytes.fromhex(lastblock['BlockHeader']['blockHash'])
-        return cls(lastblock['Height'], lastblock['Blocksize'], block, len(Transactions), Transactions)
+        return cls(block_dict['Height'], block_dict['Blocksize'], block_header, block_dict['TxCount'], Transactions)
 
     def to_dict(self):
-        if isinstance(self.BlockHeader, BlockHeader):
-            self.BlockHeader.to_hex()
-            self.BlockHeader = self.BlockHeader.__dict__
-        
+        self.BlockHeader.to_hex()
+        self.BlockHeader = self.BlockHeader.__dict__
         self.Txs = [tx.to_dict() for tx in self.Txs]
-        
         return self.__dict__

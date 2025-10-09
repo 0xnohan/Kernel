@@ -37,12 +37,12 @@ class BlockHeader:
         result += prev_block_hash_bytes[::-1]
         result += merkle_root_bytes[::-1]
         result += int_to_little_endian(self.timestamp, 4)
-
+        
         bits_bytes = self.bits
         if isinstance(bits_bytes, str):
             bits_bytes = bytes.fromhex(bits_bytes)
         result += bits_bytes
-    
+
         nonce_bytes = self.nonce
         if isinstance(nonce_bytes, int):
             nonce_bytes = int_to_little_endian(nonce_bytes, 4)
@@ -83,11 +83,9 @@ class BlockHeader:
             self.bits = bytes.fromhex(self.bits)
 
     def generateBlockHash(self):
-        sha = hash256(self.serialize())
-        proof = little_endian_to_int(sha)
-        return int_to_little_endian(proof, 32).hex()[::-1]
+        header_bytes = self.serialize()
+        sha = hash256(header_bytes)
+        return hash256(header_bytes)[::-1].hex()
 
     def to_dict(self):
-        dt = self.__dict__
-        return dt
-
+        return self.__dict__

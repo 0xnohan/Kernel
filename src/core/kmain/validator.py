@@ -1,3 +1,5 @@
+# src/core/kmain/validator.py
+
 from src.utils.serialization import merkle_root
 from src.core.primitives.transaction import Tx
 from src.core.kmain.pow import check_pow
@@ -8,7 +10,12 @@ class Validator:
         self.mempool = mempool
 
     def validate_transaction(self, tx: Tx, is_in_block=False):
+        """
+        Valide une transaction de manière exhaustive.
+        """
         tx_id = tx.id()
+        if tx.is_coinbase():
+            return True
 
         input_sum = 0
         for tx_in in tx.tx_ins:
@@ -45,7 +52,6 @@ class Validator:
             if not tx.verify_input(i, script_pubkey):
                 print(f"Validation Error (tx: {tx_id[:10]}...): Signature verification failed for input {i}.")
                 return False
-
         return True
 
     def validate_block(self, block, db):
