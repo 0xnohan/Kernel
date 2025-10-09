@@ -42,6 +42,29 @@ def handle_mined_blocks(mined_block_queue, sync_manager, utxo_manager, mempool_m
         # Et il diffuse le bloc au réseau
         sync_manager.broadcast_block(mined_block)
 
+def handle_new_transactions(new_tx_queue, sync_manager, validator, mempool):
+    """
+    Listens for new transactions from RPC, validates them, adds to mempool, and broadcasts.
+    """
+    while True:
+        tx = new_tx_queue.get()
+        tx_id = tx.id()
+        if tx_id in mempool: # Check if transaction is already in mempool
+            continue
+
+        print(f"Daemon received new transaction {tx_id[:10]}... from RPC.")
+
+        # 1. Validate the transaction
+        if validator.validate_transaction(tx):
+            # 2. Add to mempool if valid
+            mempool[tx_id] = tx
+            print(f"Transaction {tx_id[:10]}... added to mempool.")
+            
+            # 3. Broadcast to the network
+            sync_manager.broadcast_tx(tx)
+        else:
+            print(f"Daemon discarded invalid transaction {tx_id[:10]}... from RPC.")
+
 def main():
     parser = argparse.ArgumentParser(description="Kernel Daemon")
     parser.add_argument("--mine", action="store_true", help="Start mining on launch")
@@ -62,11 +85,13 @@ def main():
         
         # Création d'une Queue pour la communication Miner -> Daemon
         mined_block_queue = Queue()
+        new_tx_queue = Queue()
 
         # Instanciation des managers
         utxo_manager = UTXOManager(utxos)
         mempool_manager = MempoolManager(mempool, utxos)
         sync_manager = SyncManager(host, p2p_port, new_block_available, None, mempool, utxos)
+        validator = Validator(utxos, mempool)
         
         # Lancement du serveur P2P en thread
         p2p_server_thread = Thread(target=sync_manager.spin_up_the_server)
@@ -80,7 +105,7 @@ def main():
         print(f"API server started on port {api_port}")
         
         # Lancement du serveur RPC en processus séparé
-        processRPC = Process(target=rpcServer, args=(host, rpc_port, utxos, mempool, mining_process_manager))
+        processRPC = Process(target=rpcServer, args=(host, rpc_port, utxos, mempool, mining_process_manager, new_tx_queue))
         processRPC.start()
 
         # Initialisation de la base de données
@@ -108,6 +133,10 @@ def main():
         block_handler_thread.daemon = True
         block_handler_thread.start()
 
+        tx_handler_thread = Thread(target=handle_new_transactions, args=(new_tx_queue, sync_manager, validator, mempool))
+        tx_handler_thread.daemon = True
+        tx_handler_thread.start()
+        
         # Laisser un peu de temps au serveur P2P pour démarrer avant de se connecter aux seeds
         time.sleep(2) 
         

@@ -149,7 +149,7 @@ def get_stats():
     
     if blocks_db:
         for block in blocks_db:
-            total_transactions += block.get('Txcount', 0)
+            total_transactions += block.get('TxCount', 0)
             for tx in block.get("Txs", []):
                 for tx_out in tx.get("tx_outs", []):
                     try:
@@ -179,7 +179,7 @@ def get_blocks():
             "height": block.get("Height"),
             "hash": header.get("blockHash"),
             "timestamp": datetime.fromtimestamp(header.get('timestamp', 0), timezone.utc).isoformat(),
-            "transaction_count": block.get("Txcount"),
+            "transaction_count": block.get("TxCount"),
             "miner": get_miner_address(block),
             "size_used": block_size_used,
             "reward": 50
@@ -234,7 +234,7 @@ def get_block_details(block_hash):
                 "hash": header.get("blockHash"),
                 "previous_hash": header.get("prevBlockHash"),
                 "confirmations": len(blocks_db) - block.get("Height"),
-                "transaction_count": block.get("Txcount"),
+                "transaction_count": block.get("TxCount"),
                 "miner": get_miner_address(block),
                 "size": block.get("Blocksize"),
                 "merkle_root": header.get("merkleRoot"),
