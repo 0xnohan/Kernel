@@ -14,6 +14,26 @@ class syncManager:
         self.newBlockAvailable = newBlockAvailable
         self.secondryChain = secondryChain
         self.Mempool = Mempool
+        self.peers = set()
+
+    def connect_to_peer(self, host, port):
+        peer_id = f"{host}:{port}"
+        if peer_id in self.peers or (self.host == host and self.port == port):
+            return
+
+        try:
+            print(f"Attempting to connect to {peer_id}...")
+            peer_node = Node(host, port)
+            client_socket = peer_node.connect(self.port) 
+            self.peers.add(peer_id)
+
+            print(f"Successfully connected to {peer_id}")
+            handler_thread = Thread(target=self.handleConnection, args=(client_socket, (host, port)))
+            handler_thread.start()
+
+        except Exception as e:
+            print(f"Failed to connect to peer {peer_id}. Error: {e}")
+
 
     def spinUpTheServer(self):
         self.server = Node(self.host, self.port)
@@ -22,49 +42,78 @@ class syncManager:
         print(f"[LISTENING] at {self.host}:{self.port}")
 
         while True:
-            self.conn, self.addr = self.server.acceptConnection()
-            handleConn = Thread(target = self.handleConnection)
+            conn, addr = self.server.acceptConnection()
+            handleConn = Thread(target=self.handleConnection, args=(conn, addr))
             handleConn.start()
 
-    def handleConnection(self):
-        envelope = self.server.read()
+    def handleConnection(self, conn, addr):
+        print(f"Handling new connection from {addr}")
+        stream = None
         try:
-            if len(str(self.addr[1])) == 4:
-                self.addNode()
+            self.addNode(addr)
+            stream = conn.makefile('rb', None)
             
-            if envelope.command == b'Tx':
-                Transaction = Tx.parse(envelope.stream())
-                Transaction.TxId = Transaction.id()
-                self.Mempool[Transaction.TxId] = Transaction
-
-            if envelope.command == b'block':
-                blockObj = Block.parse(envelope.stream())
-                BlockHeaderObj = BlockHeader(blockObj.BlockHeader.version,
-                            blockObj.BlockHeader.prevBlockHash, 
-                            blockObj.BlockHeader.merkleRoot, 
-                            blockObj.BlockHeader.timestamp,
-                            blockObj.BlockHeader.bits,
-                            blockObj.BlockHeader.nonce)
+            while True:
+                envelope = NetworkEnvelope.parse(stream)
                 
-                self.newBlockAvailable[BlockHeaderObj.generateBlockHash()] = blockObj
-                print(f"New Block Received : {blockObj.Height}")
+                print(f"Received command '{envelope.command.decode()}' from {addr}")
 
-            if envelope.command == requestBlock.command:
-                start_block, end_block = requestBlock.parse(envelope.stream())
-                self.sendBlockToRequestor(start_block)
-                print(f"Start Block is {start_block} \n End Block is {end_block}")
-            
-            self.conn.close()
+                if envelope.command == b'Tx':
+                    Transaction = Tx.parse(envelope.stream())
+                    Transaction.TxId = Transaction.id()
+                    if Transaction.TxId not in self.Mempool:
+                        self.Mempool[Transaction.TxId] = Transaction
+                        print(f"Added new transaction {Transaction.TxId[:10]}... to mempool")
+                    
+                elif envelope.command == b'block':
+                    blockObj = Block.parse(envelope.stream())
+                    BlockHeaderObj = BlockHeader(blockObj.BlockHeader.version,
+                                blockObj.BlockHeader.prevBlockHash, 
+                                blockObj.BlockHeader.merkleRoot, 
+                                blockObj.BlockHeader.timestamp,
+                                blockObj.BlockHeader.bits,
+                                blockObj.BlockHeader.nonce)
+                    
+                    block_hash = BlockHeaderObj.generateBlockHash()
+                    print(f"Received new block {blockObj.Height} ({block_hash[:10]}...) from {addr}")
+                    self.newBlockAvailable[block_hash] = blockObj
+
+                elif envelope.command == requestBlock.command:
+                    start_block, end_block = requestBlock.parse(envelope.stream())
+                    print(f"Peer {addr} requested blocks from {start_block.hex()[:10]}...")
+                    # Modify logic to use "conn"
+                    # self.sendBlockToRequestor(start_block) 
+
+                # Add 'getaddr', 'addr', 'inv', etc for future msg
+
+        except (IOError, ConnectionResetError) as e:
+            print(f"Connection with {addr} was closed by the peer")
         except Exception as e:
-            self.conn.close()
-            print(f" Error while processing the client request \n {e}")
+            print(f"💥 An error occurred with peer {addr}. Closing connection. Error: {e}")
+        finally:
+            if conn:
+                conn.close()
+            
+            peer_id = f"{addr[0]}:{addr[1]}"
+            if peer_id in self.peers:
+                self.peers.remove(peer_id)
+            print(f"Connection with {addr} closed")
 
-    def addNode(self):
-        nodeDb = NodeDB()
-        portList = nodeDb.read()
+    def addNode(self, addr):
+        try:
+            peer_port = addr[1]
+            if not isinstance(peer_port, int) or peer_port <= 0:
+                return
 
-        if self.addr[1] and (self.addr[1] + 1) not in portList:
-            nodeDb.write([self.addr[1] + 1])
+            nodeDb = NodeDB()
+            portList = nodeDb.read()
+
+            if peer_port not in portList:
+                nodeDb.write([peer_port])
+                print(f"Added new peer port {peer_port} to database")
+        except Exception as e:
+            print(f"Could not add node {addr} to DB. Error: {e}")
+
 
     def sendBlockToRequestor(self, start_block):
         blocksToSend = self.fetchBlocksFromBlockchain(start_block)

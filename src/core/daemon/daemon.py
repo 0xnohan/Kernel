@@ -13,6 +13,8 @@ from src.api.server import main as web_main
 from src.core.daemon.rpc_server import rpcServer
 from src.core.kmain.utxo_manager import UTXOManager 
 from src.utils.config_loader import load_config
+from threading import Thread
+
 
 
 def main():
@@ -59,6 +61,18 @@ def main():
             mainBlockchain.GenesisBlock()
             
         mainBlockchain.settargetWhileBooting()
+        time.sleep(2) 
+        config = load_config()
+        if 'SEED_NODES' in config:
+            print("Connecting to seed nodes...")
+            client_sync = syncManager(host, p2p_port)
+            for key, address in config['SEED_NODES'].items():
+                try:
+                    peer_host, peer_port = address.split(':')
+                    conn_thread = Thread(target=client_sync.connect_to_peer, args=(peer_host, int(peer_port)))
+                    conn_thread.start()
+                except Exception as e:
+                    print(f"Invalid seed node address format: {address}")
         
         mining_process = None
         if args.mine:

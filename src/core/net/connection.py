@@ -33,6 +33,10 @@ class Node:
         envelope = NetworkEnvelope(message.command, message.serialize())
         self.socket.sendall(envelope.serialize())
     
-    def read(self):
-        envelope = NetworkEnvelope.parse(self.stream)
+    def read(self, stream_obj = None):
+        stream_to_read = stream_obj if stream_obj is not None else self.stream
+        if stream_to_read is None:
+            raise ConnectionError("No stream available to read from")
+        
+        envelope = NetworkEnvelope.parse(stream_to_read)
         return envelope
