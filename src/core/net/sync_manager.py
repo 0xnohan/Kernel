@@ -298,11 +298,23 @@ class SyncManager:
             self.db.write([block_to_save])
             print(f"Block {block_obj.Height} successfully added to the blockchain")
             
-            # TODO: Update UTXO set and clean mempool
+            spent_outputs = []
+            for tx in block_obj.Txs[1:]:
+                for tx_in in tx.tx_ins:
+                    spent_outputs.append([tx_in.prev_tx, tx_in.prev_index])
+            
+            self.utxo_manager.remove_spent_utxos(spent_outputs)
+            self.utxo_manager.add_new_utxos(block_obj.Txs)
+            print(f"UTXO set updated after processing block {block_obj.Height}")
+
+            tx_ids_in_block = [bytes.fromhex(tx.id()) for tx in block_obj.Txs]
+            self.mempool_manager.remove_transactions(tx_ids_in_block)
+            print(f"Mempool cleaned after processing block {block_obj.Height}")
             
             self.broadcast_block(block_obj, origin_peer_socket)
             
             if self.newBlockAvailable is not None:
+                self.newBlockAvailable.clear() 
                 self.newBlockAvailable[block_hash] = block_obj
         else:
             print(f"Block {block_obj.Height} is invalid. Discarding")
