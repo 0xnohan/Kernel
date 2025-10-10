@@ -9,7 +9,7 @@ from src.core.primitives.block import Block
 from src.core.primitives.blockheader import BlockHeader
 from src.core.primitives.transaction import Tx, TxIn, TxOut
 from src.core.primitives.script import Script
-from src.utils.serialization import merkle_root, target_to_bits, int_to_little_endian, little_endian_to_int
+from src.utils.serialization import merkle_root, target_to_bits, little_endian_to_int
 from src.utils.crypto_hash import hash256
 
 GENESIS_REWARD_ADDRESS = "kY7G5zouz5BBxmBn2g5a6zCf7BGeW86eB1"

@@ -1,5 +1,3 @@
-# src/core/net/messages/__init__.py
-
 from .version import Version
 from .verack import VerAck
 from .getaddr import GetAddr

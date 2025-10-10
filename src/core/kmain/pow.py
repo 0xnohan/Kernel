@@ -1,6 +1,6 @@
 from src.database.db_manager import BlockchainDB
 from src.utils.crypto_hash import hash256
-from src.utils.serialization import (int_to_little_endian, little_endian_to_int, bits_to_target)
+from src.utils.serialization import little_endian_to_int, bits_to_target
 
 
 def check_pow(block_header):

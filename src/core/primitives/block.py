@@ -1,5 +1,3 @@
-# src/core/primitives/block.py
-
 from src.core.primitives.blockheader import BlockHeader
 from src.core.primitives.transaction import Tx
 from src.utils.serialization import (

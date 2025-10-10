@@ -1,9 +1,4 @@
-# src/core/kmain/miner.py
-
-import copy
 import time
-from multiprocessing import Process
-
 from src.core.primitives.block import Block
 from src.core.primitives.blockheader import BlockHeader
 from src.database.db_manager import BlockchainDB
@@ -31,31 +26,37 @@ class Miner:
         self.bits = GENESIS_BITS
         self.current_target = bits_to_target(self.bits)
 
+
     def adjust_target_difficulty(self, block_height):
         last_block = self.db.lastBlock()
-        if not last_block: return
-
+        if not last_block:
+            return
+        
         if block_height > 0 and block_height % RESET_DIFFICULTY_AFTER_BLOCKS == 0:
             all_blocks = self.db.read()
-            if len(all_blocks) > RESET_DIFFICULTY_AFTER_BLOCKS:
+            if len(all_blocks) >= RESET_DIFFICULTY_AFTER_BLOCKS:
                 first_block_in_period = all_blocks[block_height - RESET_DIFFICULTY_AFTER_BLOCKS]
                 time_diff = last_block['BlockHeader']['timestamp'] - first_block_in_period['BlockHeader']['timestamp']
-                if time_diff == 0: return
-
+                
+                if time_diff == 0:
+                    return
+                
                 time_ratio = max(0.25, min(4.0, time_diff / AVERAGE_MINE_TIME))
                 last_target = bits_to_target(bytes.fromhex(last_block['BlockHeader']['bits']))
                 new_target = int(last_target * time_ratio)
                 self.bits = target_to_bits(min(new_target, MAX_TARGET))
+                print(f"Difficulty readjusted. New bits: {self.bits.hex()}")
             else:
                 self.bits = bytes.fromhex(last_block['BlockHeader']['bits'])
         else:
             self.bits = bytes.fromhex(last_block['BlockHeader']['bits'])
+        
         self.current_target = bits_to_target(self.bits)
+
 
     def run(self):
         self.db = BlockchainDB()
-        print("Miner process started.")
-
+        print("Miner process started")
         while True:
             last_block = self.db.lastBlock()
             if not last_block:
@@ -63,29 +64,26 @@ class Miner:
                 time.sleep(5)
                 continue
 
-            # Interrompre si un bloc externe est arrivé
             if self.new_block_available:
-                print("Mining interrupted: a new block was received from the network.")
-                self.new_block_available.clear() # On acquitte le signal
+                print("A new block has been found by a node, mining...")
+                self.new_block_available.clear() 
                 continue
 
             block_height = last_block["Height"] + 1
             prev_block_hash = last_block["BlockHeader"]["blockHash"]
             
-            # 1. Créer le bloc candidat
             block_candidate = self.create_block_template(block_height, prev_block_hash)
             if not block_candidate:
                 time.sleep(2)
                 continue
 
-            # 2. Lancer la recherche de la preuve de travail
             competition_over, mined_header = mine(block_candidate.BlockHeader, self.current_target, self.new_block_available)
 
             if competition_over:
                 continue
             
             if mined_header:
-                print(f"Block {block_height} mined successfully with nonce {mined_header.nonce}!")
+                print(f"Block {block_height} mined successfully")
                 new_block = Block(
                     block_height,
                     block_candidate.Blocksize,
@@ -94,8 +92,6 @@ class Miner:
                     block_candidate.Txs
                 )
 
-                # 3. ÉCRIRE LE BLOC EN BASE DE DONNÉES (logique restaurée)
-                # C'est l'étape cruciale pour éviter la race condition.
                 mined_header.to_hex()
                 tx_json_list = [tx.to_dict() for tx in new_block.Txs]
                 block_to_save = {
@@ -105,8 +101,8 @@ class Miner:
                 }
                 self.db.write([block_to_save])
                 
-                # 4. Envoyer le bloc au daemon (qui n'aura plus qu'à diffuser)
                 self.mined_block_queue.put(new_block)
+
 
     def create_block_template(self, height, prev_hash):
         block_data = self.mempool_manager.get_transactions_for_block()

@@ -29,8 +29,7 @@ class UTXOManager:
                 if spend_key not in spent_outputs:
                     if tx_id not in self.utxos:
                         self.utxos[tx_id] = Tx.to_obj(tx_data)
-                    # Si la Tx est déjà dans les utxos mais avec un autre output, on la garde
-                    # Possible si une Tx a plusieurs outputs non dépensés
+                    
 
         print(f"UTXO set rebuilt. Found {len(self.utxos)} unspent transactions.")
 
@@ -50,10 +49,7 @@ class UTXOManager:
                 tx_obj = self.utxos[tx_id_hex]
 
                 if 0 <= output_index < len(tx_obj.tx_outs):
-                    # En pratique, on ne supprime pas un output spécifique mais
-                    # toute la transaction car ses outputs sont maintenant dépensés.
-                    # Une gestion plus fine consisterait à recréer un objet Tx avec
-                    # les outputs restants. Pour l'instant, on supprime la clé.
+                   
                     del self.utxos[tx_id_hex]
                 else:
                     print(f"Warning: Output index {output_index} out of range for Tx {tx_id_hex}.")

@@ -6,15 +6,14 @@ from src.core.net.protocol import NetworkEnvelope
 from src.core.kmain.validator import Validator
 from src.core.kmain.utxo_manager import UTXOManager
 from src.core.kmain.mempool import MempoolManager
-import copy
 from src.core.kmain.pow import check_pow
+from src.core.kmain.constants import MAX_HEADERS_TO_SEND
+from threading import Thread, Lock, RLock
 from src.core.net.messages import (
     Version, VerAck, GetAddr, Addr,
     GetHeaders, Headers, Inv, GetData, Tx, Block,
     INV_TYPE_TX, INV_TYPE_BLOCK
 )
-from src.core.kmain.constants import MAX_HEADERS_TO_SEND
-from threading import Thread, Lock, RLock
 
 class SyncManager:
     def __init__(self, host, port, newBlockAvailable=None, secondaryChain=None, mempool=None, utxos=None):
@@ -41,17 +40,15 @@ class SyncManager:
 
     def send_message(self, sock, message):
         envelope = NetworkEnvelope(message.command, message.serialize())
-        sock.sendall(envelope.serialize())
-        # 
+        sock.sendall(envelope.serialize()) 
         print(f"-> Sent {message.command.decode()} to {sock.getpeername()}")
-    
+
 
     def connect_to_peer(self, host, port):
         peer_id = f"{host}:{port}"
         with self.peers_lock:
             if peer_id in self.peers or (self.host == host and self.port == port):
                 return
-
         try:
             peer_node = Node(host, port)
             client_socket = peer_node.connect(self.port)
@@ -199,7 +196,7 @@ class SyncManager:
                     break
         
         if headers_to_send:
-            print(f"Sending {len(headers_to_send)} headers to peer.")
+            print(f"Sending {len(headers_to_send)} headers to peer")
             headers_msg = Headers(headers_to_send)
             self.send_message(conn, headers_msg)
 
@@ -207,7 +204,7 @@ class SyncManager:
     
     def handle_headers(self, conn, headers_msg):
         if not headers_msg.headers:
-            print("Finished headers synchronization.")
+            print("Finished headers synchronization")
             with self.sync_lock:
                 self.is_syncing = False
             return
@@ -218,10 +215,10 @@ class SyncManager:
         headers_to_request = []
         for header in headers_msg.headers:
             if header.prevBlockHash.hex() != prev_block_hash:
-                print("Header validation failed: Discontinuity in chain.")
+                print("Header validation failed: Discontinuity in chain")
                 return
             if not check_pow(header):
-                print("Header validation failed: Invalid Proof of Work.")
+                print("Header validation failed: Invalid Proof of Work")
                 return
             
             headers_to_request.append(header)
@@ -253,6 +250,7 @@ class SyncManager:
             getdata_msg = GetData(items_to_get)
             self.send_message(conn, getdata_msg)
 
+
     def handle_getdata(self, conn, getdata_msg):
         for item_type, item_hash in getdata_msg.items:
             if item_type == INV_TYPE_TX:
@@ -277,11 +275,11 @@ class SyncManager:
             return
 
         if self.validator.validate_transaction(tx_obj):
-            print(f"Transaction {tx_id[:10]}... is valid. Adding to mempool.")
+            print(f"Transaction {tx_id[:10]}... is valid. Adding to mempool")
             self.mempool[tx_id] = tx_obj
             self.broadcast_tx(tx_obj, origin_peer_socket)
         else:
-            print(f"Transaction {tx_id[:10]}... is invalid. Discarding.")
+            print(f"Transaction {tx_id[:10]}... is invalid. Discarding")
 
     def handle_block(self, block_obj, origin_peer_socket=None):
         block_hash = block_obj.BlockHeader.generateBlockHash()
@@ -298,7 +296,7 @@ class SyncManager:
                 "Txs": tx_json_list
             }
             self.db.write([block_to_save])
-            print(f"Block {block_obj.Height} successfully added to the blockchain.")
+            print(f"Block {block_obj.Height} successfully added to the blockchain")
             
             # TODO: Update UTXO set and clean mempool
             
@@ -307,7 +305,7 @@ class SyncManager:
             if self.newBlockAvailable is not None:
                 self.newBlockAvailable[block_hash] = block_obj
         else:
-            print(f"Block {block_obj.Height} is invalid. Discarding.")
+            print(f"Block {block_obj.Height} is invalid. Discarding")
 
     def cleanup_peer_connection(self, peer_id, conn):
         if conn:
@@ -317,7 +315,7 @@ class SyncManager:
                 del self.peers[peer_id]
         if peer_id in self.peer_handshake_status:
             del self.peer_handshake_status[peer_id]
-        print(f"Connection with {peer_id} closed and cleaned up.")
+        print(f"Connection with {peer_id} closed and cleaned up")
 
     def broadcast_inv(self, inv_msg, origin_peer_socket=None):
         with self.peers_lock:

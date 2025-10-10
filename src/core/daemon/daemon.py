@@ -1,5 +1,3 @@
-# src/core/daemon/daemon.py
-
 import sys
 import os
 import argparse
@@ -20,50 +18,39 @@ from src.core.kmain.genesis import create_genesis_block
 from src.database.db_manager import BlockchainDB
 from src.core.kmain.validator import Validator
 
+
 def handle_mined_blocks(mined_block_queue, sync_manager, utxo_manager, mempool_manager):
-    """
-    Écoute les blocs minés, met à jour l'état en mémoire et diffuse.
-    """
     while True:
         mined_block = mined_block_queue.get()
-        print(f"Daemon received mined block {mined_block.Height} from Miner process.")
-
-        # Le mineur a déjà écrit en DB. Le daemon met à jour les dictionnaires partagés.
+        print(f"Daemon received mined block {mined_block.Height} from Miner process")
         spent_outputs = []
-        for tx in mined_block.Txs[1:]: # On ignore la coinbase
+        for tx in mined_block.Txs[1:]: #Ignore coinbase
             for tx_in in tx.tx_ins:
                 spent_outputs.append([tx_in.prev_tx, tx_in.prev_index])
         
         utxo_manager.remove_spent_utxos(spent_outputs)
         utxo_manager.add_new_utxos(mined_block.Txs)
         mempool_manager.remove_transactions([bytes.fromhex(tx.id()) for tx in mined_block.Txs])
-        print("Daemon updated UTXO set and mempool.")
-
-        # Et il diffuse le bloc au réseau
+        print("Daemon updated UTXO set and mempool")
         sync_manager.broadcast_block(mined_block)
 
+
 def handle_new_transactions(new_tx_queue, sync_manager, validator, mempool):
-    """
-    Listens for new transactions from RPC, validates them, adds to mempool, and broadcasts.
-    """
     while True:
         tx = new_tx_queue.get()
         tx_id = tx.id()
-        if tx_id in mempool: # Check if transaction is already in mempool
+        if tx_id in mempool: 
             continue
 
-        print(f"Daemon received new transaction {tx_id[:10]}... from RPC.")
+        print(f"Daemon received new transaction {tx_id} from RPC")
 
-        # 1. Validate the transaction
         if validator.validate_transaction(tx):
-            # 2. Add to mempool if valid
             mempool[tx_id] = tx
-            print(f"Transaction {tx_id[:10]}... added to mempool.")
-            
-            # 3. Broadcast to the network
+            print(f"Transaction {tx_id} added to mempool")
             sync_manager.broadcast_tx(tx)
         else:
-            print(f"Daemon discarded invalid transaction {tx_id[:10]}... from RPC.")
+            print(f"Daemon discarded invalid transaction {tx_id} from RPC")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Kernel Daemon")
@@ -80,41 +67,38 @@ def main():
     with Manager() as manager:
         utxos = manager.dict()
         mempool = manager.dict()
-        new_block_available = manager.dict() # Ce flag est pour interrompre le mineur
+        new_block_available = manager.dict() 
         mining_process_manager = manager.dict({'is_mining': False, 'shutdown_requested': False})
         
-        # Création d'une Queue pour la communication Miner -> Daemon
+        #Miner-Deamon
         mined_block_queue = Queue()
         new_tx_queue = Queue()
 
-        # Instanciation des managers
         utxo_manager = UTXOManager(utxos)
         mempool_manager = MempoolManager(mempool, utxos)
         sync_manager = SyncManager(host, p2p_port, new_block_available, None, mempool, utxos)
         validator = Validator(utxos, mempool)
         
-        # Lancement du serveur P2P en thread
+        # Thread P2P
         p2p_server_thread = Thread(target=sync_manager.spin_up_the_server)
         p2p_server_thread.daemon = True 
         p2p_server_thread.start()
         print(f"P2P server started on port {p2p_port}")
-
-        # Lancement de l'API en processus séparé
+        
+        # API
         processAPI = Process(target=web_main, args=(utxos, mempool, api_port, p2p_port))
         processAPI.start()
         print(f"API server started on port {api_port}")
         
-        # Lancement du serveur RPC en processus séparé
+        # RPC
         processRPC = Process(target=rpcServer, args=(host, rpc_port, utxos, mempool, mining_process_manager, new_tx_queue))
         processRPC.start()
 
-        # Initialisation de la base de données
+        # Init
         db = BlockchainDB()
         if not db.lastBlock():
-            print("No blockchain found. Creating genesis block...")
+            print("No blockchain found, creating genesis block")
             genesis = create_genesis_block()
-            
-            # On écrit le genesis directement ici, une seule fois au démarrage
             genesis.BlockHeader.to_hex()
             tx_json_list = [tx.to_dict() for tx in genesis.Txs]
             block_to_save = {
@@ -123,21 +107,21 @@ def main():
                 "Txs": tx_json_list
             }
             db.write([block_to_save])
-            print("Genesis block written to database.")
+            print("Genesis block written to database")
 
         print("Initializing UTXO set...")
         utxo_manager.build_utxos_from_db()
         
-        # Lancement du thread qui écoute les blocs minés
+        # Listen to mined block
         block_handler_thread = Thread(target=handle_mined_blocks, args=(mined_block_queue, sync_manager, utxo_manager, mempool_manager))
         block_handler_thread.daemon = True
         block_handler_thread.start()
-
+        
+        # Listen to new transactions
         tx_handler_thread = Thread(target=handle_new_transactions, args=(new_tx_queue, sync_manager, validator, mempool))
         tx_handler_thread.daemon = True
         tx_handler_thread.start()
         
-        # Laisser un peu de temps au serveur P2P pour démarrer avant de se connecter aux seeds
         time.sleep(2) 
         
         config = load_config()
@@ -169,8 +153,10 @@ def main():
                     mining_process.join()
                     mining_process = None
                 time.sleep(2)
+
         except KeyboardInterrupt:
             print("\nShutting down daemon...")
+            
         finally:
             if processAPI.is_alive():
                 processAPI.terminate()

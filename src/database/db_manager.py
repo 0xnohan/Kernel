@@ -4,6 +4,7 @@ import os
 import json
 from sqlitedict import SqliteDict
 
+
 class BaseDB:
     def __init__(self):
         self.basepath = "data"
@@ -28,7 +29,6 @@ class BlockchainDB(BaseDB):
         return blocks
 
     def write(self, items):
-        """Écrit une liste de blocs dans la base de données."""
         try:
             for block_dict in items:
                 height = block_dict['Height']
@@ -40,7 +40,6 @@ class BlockchainDB(BaseDB):
             self.db.rollback()
 
     def update(self, data):
-        """Écrase la base de données avec un nouvel ensemble de blocs."""
         try:
             self.db.clear() 
             self.db.commit() 
