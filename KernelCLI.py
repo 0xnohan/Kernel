@@ -6,6 +6,7 @@ import subprocess
 import time
 import sys
 from src.utils.config_loader import load_config, update_config, get_config_dict
+from src.core.kmain.constants import FEE_RATE_FAST, FEE_RATE_NORMAL, FEE_RATE_SLOW
 
 def clearScreen():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -176,6 +177,9 @@ def main():
                 for i, wallet in enumerate(wallets):
                     balance = wallet.get('balance', 0.0)
                     print(f"  {i + 1} - {wallet.get('WalletName')} ({wallet.get('PublicAddress')}) - Balance: {balance:.8f} KNL")
+                    fee_fast = FEE_RATE_FAST
+                    fee_normal = FEE_RATE_NORMAL
+                    fee_slow = FEE_RATE_SLOW
                 
                 try:
                     wallet_choice = int(input(">> ")) - 1
@@ -184,7 +188,16 @@ def main():
                         print(f"\nSender: {from_addr}")
                         to_addr = input("Recipient address: ")
                         amount = input("Amount in KNL: ")
-                        command = {"command": "send_tx", "params": {"from": from_addr, "to": to_addr, "amount": amount}}
+                        print("\nSelect transaction fee rate:")
+                        print(f"  1 - Fast ({fee_fast} kernels/byte)")
+                        print(f"  2 - Normal ({fee_normal} kernels/byte)")
+                        print(f"  3 - Slow ({fee_slow} kernels/byte)")
+                        fee_choice = input(">> ")
+                        fee_map = {'1': fee_fast, '2': fee_normal, '3': fee_slow}
+                        fee_rate = fee_map.get(fee_choice, FEE_RATE_NORMAL) 
+                        print(f"Fee rate selected: {fee_rate} kernels/byte")
+
+                        command = {"command": "send_tx", "params": {"from": from_addr, "to": to_addr, "amount": amount, "fee_rate": fee_rate}}
                         response = SendRpcCommand(host, rpc_port, command)
                     else:
                         response = {"message": "Invalid selection."}

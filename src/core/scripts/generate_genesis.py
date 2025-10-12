@@ -9,7 +9,7 @@ from src.core.primitives.block import Block
 from src.core.primitives.blockheader import BlockHeader
 from src.core.primitives.transaction import Tx, TxIn, TxOut
 from src.core.primitives.script import Script
-from src.utils.serialization import merkle_root, target_to_bits, int_to_little_endian, little_endian_to_int
+from src.utils.serialization import merkle_root, target_to_bits, little_endian_to_int
 from src.utils.crypto_hash import hash256
 
 GENESIS_REWARD_ADDRESS = "kY7G5zouz5BBxmBn2g5a6zCf7BGeW86eB1"
@@ -48,8 +48,8 @@ def main():
     coinbase_tx = Tx(version=1, tx_ins=[tx_in], tx_outs=[tx_out], locktime=0)
     coinbase_tx.TxId = coinbase_tx.id()
     merkle_tree_root = merkle_root([bytes.fromhex(coinbase_tx.TxId)])
-    #bits = target_to_bits(INITIAL_TARGET)
-    bits = bytes.fromhex("b22d121e")
+    bits = target_to_bits(INITIAL_TARGET)
+    #bits = bytes.fromhex("3767021e")
     
     block_header = BlockHeader(
         version=1,
