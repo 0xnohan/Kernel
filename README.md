@@ -71,7 +71,7 @@ Before getting started, ensure you have the following installed:
 
 ## Usage
     
- 1. Start the Client and follow the instructions:
+ 1. To test the project, start the Client and follow the instructions:
     ```bash
     python KernelCLI.py
 
@@ -82,14 +82,28 @@ Before getting started, ensure you have the following installed:
     npm install
     npm run dev
 
+ 3. To test with multiple nodes locally:
+  - Duplicate the project folder for each additional node
+  - In each duplicated folder, modify the data/config.ini file:
+    - Change the P2P and API ports to unique values (ex port = 9999 for [P2P] and port = 9001 for [API]).
+    - Add the first node as a "seed node". In the [SEED_NODES] section, add the address of the first node (ex: seed1 = 127.0.0.1:8889).
+  - Run python KernelCLI.py from the terminal in each folder. The nodes will connect to each other and start synchronizing the blockchain.
+
 ## Versions
 
 ### Current Version
 
-- **Kernel Version**: 1.30
+- **Kernel Version**: 1.32.
 - **Date**: October 2025
 
-**Changes**:
+**New Changes**:
+- Fix bugs in validator.py, miner.py, sync_manager.py
+- Add a stable p2p system (mining race, messages (inv, addr, headers,...), timeout, broadcast inventory, share peers)
+- Implement connection between nodes
+- Change for sqldict instead of .json for a better structure (test for now)
+- Add dynamics fees for transactions
+
+**Last Changes**:
 - Changed the architecture of the project to split the files for better understanding
 - Added settings in the client to configure the ini file (ports, miner, host,...)
 - Added new utils files to load configurations
