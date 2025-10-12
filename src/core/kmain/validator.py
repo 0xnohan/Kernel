@@ -16,21 +16,21 @@ class Validator:
         input_sum = 0
         for tx_in in tx.tx_ins:
             prev_tx_hex = tx_in.prev_tx.hex()
-
-            if tx_id in self.mempool:
-                print(f"Validation Error (tx: {tx_id}): Transaction already in mempool")
-                return False
-            
-            if prev_tx_hex not in self.utxos:
-                print(f"Validation Error (tx: {tx_id}): Previous tx {prev_tx_hex} not in UTXO set")
-                return False
             
             if not is_in_block:
+                if tx_id in self.mempool:
+                    print(f"Validation Error (tx: {tx_id}): Transaction already in mempool")
+                    return False
+                
                 for mempool_tx in self.mempool.values():
                     for mempool_tx_in in mempool_tx.tx_ins:
                         if mempool_tx_in.prev_tx == tx_in.prev_tx and mempool_tx_in.prev_index == tx_in.prev_index:
                             print(f"Validation Error (tx: {tx_id}): Double spend attempt in mempool")
                             return False
+                        
+            if prev_tx_hex not in self.utxos:
+                print(f"Validation Error (tx: {tx_id}): Previous tx {prev_tx_hex} not in UTXO set")
+                return False
             
             prev_tx_obj = self.utxos.get(prev_tx_hex)
             if tx_in.prev_index >= len(prev_tx_obj.tx_outs):
@@ -58,8 +58,8 @@ class Validator:
     def validate_block(self, block, db):
         last_block = db.lastBlock()
     
-        if last_block and block.Height <= last_block['Height']:
-            print(f"Block validation skipped (Block {block.Height}): Already have this or a newer block")
+        if last_block and block.Height != last_block['Height'] + 1:
+            print(f"Block validation failed (Block {block.Height}): Invalid height, expected {last_block['Height'] + 1}")
             return False
         
         if not check_pow(block.BlockHeader):
@@ -77,7 +77,15 @@ class Validator:
             print(f"Block validation failed (Block {block.Height}): Merkle root mismatch")
             return False
 
+        spent_utxos_in_block = set()
         for tx in block.Txs[1:]:
+            for tx_in in tx.tx_ins:
+                utxo_id = f"{tx_in.prev_tx.hex()}_{tx_in.prev_index}"
+                if utxo_id in spent_utxos_in_block:
+                    print(f"Block validation failed (Block {block.Height}): Double spend inside the same block for UTXO {utxo_id}")
+                    return False
+                spent_utxos_in_block.add(utxo_id)
+
             if not self.validate_transaction(tx, is_in_block=True):
                 print(f"Block validation failed (Block {block.Height}): Invalid transaction {tx.id()}")
                 return False

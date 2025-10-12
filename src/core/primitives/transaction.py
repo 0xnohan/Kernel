@@ -60,9 +60,15 @@ class Tx:
 
         for i, tx_in in enumerate(self.tx_ins):
             if i == input_index:
-                s += TxIn(tx_in.prev_tx, tx_in.prev_index, script_pubkey).serialize()
+                s += TxIn(prev_tx=tx_in.prev_tx,
+                    prev_index=tx_in.prev_index,
+                    script_sig=script_pubkey,
+                    sequence=tx_in.sequence).serialize()
             else:
-                s += TxIn(tx_in.prev_tx, tx_in.prev_index).serialize()
+                s += TxIn(prev_tx=tx_in.prev_tx,
+                    prev_index=tx_in.prev_index,
+                    script_sig=Script(),
+                    sequence=tx_in.sequence).serialize()
 
         s += encode_varint(len(self.tx_outs))
 
