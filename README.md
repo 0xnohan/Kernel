@@ -84,16 +84,21 @@ Before getting started, ensure you have the following installed:
 
  3. To test with multiple nodes locally:
   - Duplicate the project folder for each additional node
+  
   - In each duplicated folder, modify the data/config.ini file:
-    - Change the P2P and API ports to unique values (ex port = 9999 for [P2P] and port = 9001 for [API]).
-    - Add the first node as a "seed node". In the [SEED_NODES] section, add the address of the first node (ex: seed1 = 127.0.0.1:8889).
-  - Run python KernelCLI.py from the terminal in each folder. The nodes will connect to each other and start synchronizing the blockchain.
+    - Change the P2P and API ports to unique values (ex port = 9999 for `[P2P]` and port = 9001 for `[API]`)
+    - Add the first node as a "seed node" (no value)
+    - In the `[SEED_NODES]` section (node2, node3,...), add the address of the first node (ex: node1 = 127.0.0.1:8889)
+
+  - Run: 
+    ```bash
+    python KernelCLI.py # in each folder
 
 ## Versions
 
 ### Current Version
 
-- **Kernel Version**: 1.32.
+- **Kernel Version**: 1.32.3
 - **Date**: October 2025
 
 **New Changes**:
