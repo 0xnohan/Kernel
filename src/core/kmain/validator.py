@@ -16,6 +16,10 @@ class Validator:
         input_sum = 0
         for tx_in in tx.tx_ins:
             prev_tx_hex = tx_in.prev_tx.hex()
+
+            if tx_id in self.mempool:
+                print(f"Validation Error (tx: {tx_id}): Transaction already in mempool")
+                return False
             
             if prev_tx_hex not in self.utxos:
                 print(f"Validation Error (tx: {tx_id}): Previous tx {prev_tx_hex} not in UTXO set")
