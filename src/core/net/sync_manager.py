@@ -1,4 +1,5 @@
 import socket
+import time
 from src.core.primitives.block import Block
 from src.core.net.connection import Node
 from src.database.db_manager import BlockchainDB
@@ -8,11 +9,12 @@ from src.core.kmain.validator import Validator
 from src.core.kmain.utxo_manager import UTXOManager
 from src.core.kmain.mempool import MempoolManager
 from src.core.kmain.pow import check_pow
-from src.core.kmain.constants import MAX_HEADERS_TO_SEND
+from src.core.kmain.constants import MAX_HEADERS_TO_SEND, PING_INTERVAL
 from threading import Thread, Lock, RLock
 from src.core.net.messages import (
     Version, VerAck, GetAddr, Addr,
-    GetHeaders, Headers, Inv, GetData, Tx, Block,
+    GetHeaders, Headers, Inv, GetData, 
+    Tx, Block, Ping, Pong,
     INV_TYPE_TX, INV_TYPE_BLOCK
 )
 
@@ -35,6 +37,7 @@ class SyncManager:
         self.peers = {} 
         self.peers_lock = RLock()
         
+        self.last_ping_sent = {}
         self.sync_lock = Lock()
         self.is_syncing = False
 
@@ -66,11 +69,30 @@ class SyncManager:
         except Exception as e:
             print(f"Failed to connect to peer {peer_id}. Error: {e}")
 
+    def start_ping_thread(self):
+        def ping_peers():
+            while True:
+                with self.peers_lock:
+                    for peer_id, conn in list(self.peers.items()):
+                        if time.time() - self.last_ping_sent.get(peer_id, 0) > 60:
+                            try:
+                                ping_msg = Ping()
+                                self.send_message(conn, ping_msg)
+                                self.last_ping_sent[peer_id] = time.time()
+                            except Exception as e:
+                                print(f"Failed to send ping to {peer_id}: {e}")
+                time.sleep(PING_INTERVAL)
+
+        ping_thread = Thread(target=ping_peers)
+        ping_thread.daemon = True
+        ping_thread.start()
 
     def spin_up_the_server(self):
         self.server = Node(self.host, self.port)
         self.server.startServer()
         print(f"[LISTENING] at {self.host}:{self.port}")
+
+        self.start_ping_thread()
 
         while True:
             conn, addr = self.server.acceptConnection()
@@ -149,6 +171,15 @@ class SyncManager:
                         addr_message = Addr.parse(envelope.stream())
                         for new_host, new_port in addr_message.addresses:
                             self.connect_to_peer(new_host, new_port)
+                    
+                    elif command == Ping.command.decode():
+                        ping_msg = Ping.parse(envelope.stream())
+                        pong_msg = Pong(ping_msg.nonce)
+                        self.send_message(conn, pong_msg)
+                    
+                    elif command == Pong.command.decode():
+                        pong_msg = Pong.parse(envelope.stream())
+                        #print(f"Received pong from {peer_id_str} with nonce {pong_msg.nonce}")
 
                 except (RuntimeError, ValueError, IndexError) as e:
                     print(f"Error message from {peer_id_str}: {e}. Discarding message and continuing")
