@@ -1,5 +1,6 @@
 import socket 
 from src.core.net.protocol import NetworkEnvelope
+from src.core.kmain.constants import P2P_TIMEOUT
 
 class Node:
     def __init__(self, host, port):
@@ -14,6 +15,7 @@ class Node:
 
     def connect(self, port, bindPort = None):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.settimeout(P2P_TIMEOUT)
         
         if bindPort:
             self.socket.bind((self.host, port))
@@ -23,6 +25,7 @@ class Node:
 
     def acceptConnection(self):
         self.conn, self.addr = self.server.accept()
+        self.conn.settimeout(P2P_TIMEOUT)
         self.stream = self.conn.makefile('rb', None)
         return self.conn, self.addr
 

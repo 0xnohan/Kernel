@@ -1,3 +1,5 @@
+import socket
+import time
 from src.core.primitives.block import Block
 from src.core.net.connection import Node
 from src.database.db_manager import BlockchainDB
@@ -7,11 +9,12 @@ from src.core.kmain.validator import Validator
 from src.core.kmain.utxo_manager import UTXOManager
 from src.core.kmain.mempool import MempoolManager
 from src.core.kmain.pow import check_pow
-from src.core.kmain.constants import MAX_HEADERS_TO_SEND
+from src.core.kmain.constants import MAX_HEADERS_TO_SEND, PING_INTERVAL
 from threading import Thread, Lock, RLock
 from src.core.net.messages import (
     Version, VerAck, GetAddr, Addr,
-    GetHeaders, Headers, Inv, GetData, Tx, Block,
+    GetHeaders, Headers, Inv, GetData, 
+    Tx, Block, Ping, Pong,
     INV_TYPE_TX, INV_TYPE_BLOCK
 )
 
@@ -34,6 +37,7 @@ class SyncManager:
         self.peers = {} 
         self.peers_lock = RLock()
         
+        self.last_ping_sent = {}
         self.sync_lock = Lock()
         self.is_syncing = False
 
@@ -65,11 +69,30 @@ class SyncManager:
         except Exception as e:
             print(f"Failed to connect to peer {peer_id}. Error: {e}")
 
+    def start_ping_thread(self):
+        def ping_peers():
+            while True:
+                with self.peers_lock:
+                    for peer_id, conn in list(self.peers.items()):
+                        if time.time() - self.last_ping_sent.get(peer_id, 0) > 60:
+                            try:
+                                ping_msg = Ping()
+                                self.send_message(conn, ping_msg)
+                                self.last_ping_sent[peer_id] = time.time()
+                            except Exception as e:
+                                print(f"Failed to send ping to {peer_id}: {e}")
+                time.sleep(PING_INTERVAL)
+
+        ping_thread = Thread(target=ping_peers)
+        ping_thread.daemon = True
+        ping_thread.start()
 
     def spin_up_the_server(self):
         self.server = Node(self.host, self.port)
         self.server.startServer()
         print(f"[LISTENING] at {self.host}:{self.port}")
+
+        self.start_ping_thread()
 
         while True:
             conn, addr = self.server.acceptConnection()
@@ -89,67 +112,81 @@ class SyncManager:
             stream = conn.makefile('rb', None)
             
             while True:
-                envelope = NetworkEnvelope.parse(stream)
-                command = envelope.command.decode()
-                
-                if command == Version.command.decode():
-                    peer_version = Version.parse(envelope.stream())
-                    print(f"Peer {peer_id_str} version: {peer_version.version}, height: {peer_version.start_height}")
-                    if self.peer_handshake_status.get(peer_id_str) is None:
-                        last_block = self.db.lastBlock()
-                        start_height = last_block['Height'] if last_block else 0
-                        version_msg = Version(start_height=start_height)
-                        self.send_message(conn, version_msg)
-                    verack_msg = VerAck()
-                    self.send_message(conn, verack_msg)
-                    self.peer_handshake_status[peer_id_str] = {'version_received': True, 'verack_received': False}
+                try:
+                    envelope = NetworkEnvelope.parse(stream)
+                    command = envelope.command.decode()
+                    
+                    if command == Version.command.decode():
+                        peer_version = Version.parse(envelope.stream())
+                        print(f"Peer {peer_id_str} version: {peer_version.version}, height: {peer_version.start_height}")
+                        if self.peer_handshake_status.get(peer_id_str) is None:
+                            last_block = self.db.lastBlock()
+                            start_height = last_block['Height'] if last_block else 0
+                            version_msg = Version(start_height=start_height)
+                            self.send_message(conn, version_msg)
+                        verack_msg = VerAck()
+                        self.send_message(conn, verack_msg)
+                        self.peer_handshake_status[peer_id_str] = {'version_received': True, 'verack_received': False}
 
-                elif command == VerAck.command.decode():
-                    if peer_id_str in self.peer_handshake_status and self.peer_handshake_status[peer_id_str]['version_received']:
-                        self.peer_handshake_status[peer_id_str]['verack_received'] = True
-                        print(f"Handshake complete with {peer_id_str}. Connection established.")
-                        self.start_sync(conn)
+                    elif command == VerAck.command.decode():
+                        if peer_id_str in self.peer_handshake_status and self.peer_handshake_status[peer_id_str]['version_received']:
+                            self.peer_handshake_status[peer_id_str]['verack_received'] = True
+                            print(f"Handshake complete with {peer_id_str}. Connection established.")
+                            self.start_sync(conn)
 
-                elif command == GetHeaders.command.decode():
-                    getheaders_msg = GetHeaders.parse(envelope.stream())
-                    self.handle_getheaders(conn, getheaders_msg)
+                    elif command == GetHeaders.command.decode():
+                        getheaders_msg = GetHeaders.parse(envelope.stream())
+                        self.handle_getheaders(conn, getheaders_msg)
 
-                elif command == Headers.command.decode():
-                    headers_msg = Headers.parse(envelope.stream())
-                    self.handle_headers(conn, headers_msg)
+                    elif command == Headers.command.decode():
+                        headers_msg = Headers.parse(envelope.stream())
+                        self.handle_headers(conn, headers_msg)
 
-                elif command == Block.command.decode():
-                    block_obj = Block.parse(envelope.stream())
-                    self.handle_block(block_obj, origin_peer_socket=conn)
-                
-                elif command == Inv.command.decode():
-                    inv_msg = Inv.parse(envelope.stream())
-                    self.handle_inv(conn, inv_msg)
-                
-                elif command == GetData.command.decode():
-                    getdata_msg = GetData.parse(envelope.stream())
-                    self.handle_getdata(conn, getdata_msg)
+                    elif command == Block.command.decode():
+                        block_obj = Block.parse(envelope.stream())
+                        self.handle_block(block_obj, origin_peer_socket=conn)
+                    
+                    elif command == Inv.command.decode():
+                        inv_msg = Inv.parse(envelope.stream())
+                        self.handle_inv(conn, inv_msg)
+                    
+                    elif command == GetData.command.decode():
+                        getdata_msg = GetData.parse(envelope.stream())
+                        self.handle_getdata(conn, getdata_msg)
 
-                elif command == Tx.command.decode():
-                    tx_obj = Tx.parse(envelope.stream())
-                    self.handle_tx(tx_obj, origin_peer_socket=conn)
-                
-                elif command == GetAddr.command.decode():
-                    known_peers = []
-                    with self.peers_lock:
-                        for peer_id in self.peers:
-                            host, port_str = peer_id.rsplit(':', 1)
-                            known_peers.append((host, int(port_str)))
-                    addr_msg = Addr(known_peers)
-                    self.send_message(conn, addr_msg)
+                    elif command == Tx.command.decode():
+                        tx_obj = Tx.parse(envelope.stream())
+                        self.handle_tx(tx_obj, origin_peer_socket=conn)
+                    
+                    elif command == GetAddr.command.decode():
+                        known_peers = []
+                        with self.peers_lock:
+                            for peer_id in self.peers:
+                                host, port_str = peer_id.rsplit(':', 1)
+                                known_peers.append((host, int(port_str)))
+                        addr_msg = Addr(known_peers)
+                        self.send_message(conn, addr_msg)
 
-                elif command == Addr.command.decode():
-                    addr_message = Addr.parse(envelope.stream())
-                    for new_host, new_port in addr_message.addresses:
-                        self.connect_to_peer(new_host, new_port)
+                    elif command == Addr.command.decode():
+                        addr_message = Addr.parse(envelope.stream())
+                        for new_host, new_port in addr_message.addresses:
+                            self.connect_to_peer(new_host, new_port)
+                    
+                    elif command == Ping.command.decode():
+                        ping_msg = Ping.parse(envelope.stream())
+                        pong_msg = Pong(ping_msg.nonce)
+                        self.send_message(conn, pong_msg)
+                    
+                    elif command == Pong.command.decode():
+                        pong_msg = Pong.parse(envelope.stream())
+                        #print(f"Received pong from {peer_id_str} with nonce {pong_msg.nonce}")
 
-        except (IOError, ConnectionResetError):
-            pass
+                except (RuntimeError, ValueError, IndexError) as e:
+                    print(f"Error message from {peer_id_str}: {e}. Discarding message and continuing")
+                    continue
+
+        except (IOError, ConnectionResetError, socket.timeout) as e:
+            print(f"Connection lost with peer {peer_id_str}. Reason: {e}")
         except Exception as e:
             print(f"An error occurred with peer {peer_id_str}. Error: {e}")
         finally:

@@ -22,7 +22,7 @@ from src.core.kmain.validator import Validator
 def handle_mined_blocks(mined_block_queue, sync_manager, utxo_manager, mempool_manager):
     while True:
         mined_block = mined_block_queue.get()
-        print(f"Daemon received mined block {mined_block.Height} from Miner process")
+        #print(f"Daemon received mined block {mined_block.Height} from Miner process")
         spent_outputs = []
         for tx in mined_block.Txs[1:]: #Ignore coinbase
             for tx_in in tx.tx_ins:
@@ -31,7 +31,7 @@ def handle_mined_blocks(mined_block_queue, sync_manager, utxo_manager, mempool_m
         utxo_manager.remove_spent_utxos(spent_outputs)
         utxo_manager.add_new_utxos(mined_block.Txs)
         mempool_manager.remove_transactions([bytes.fromhex(tx.id()) for tx in mined_block.Txs])
-        print("Daemon updated UTXO set and mempool")
+        #print("Daemon updated UTXO set and mempool")
         sync_manager.broadcast_block(mined_block)
 
 
@@ -42,7 +42,7 @@ def handle_new_transactions(new_tx_queue, sync_manager, validator, mempool):
         if tx_id in mempool: 
             continue
 
-        print(f"Daemon received new transaction {tx_id} from RPC")
+        #print(f"Daemon received new transaction {tx_id} from RPC")
 
         if validator.validate_transaction(tx):
             mempool[tx_id] = tx

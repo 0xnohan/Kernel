@@ -39,7 +39,7 @@ class Miner:
                 time_diff = last_block['BlockHeader']['timestamp'] - first_block_in_period['BlockHeader']['timestamp']
                 
                 if time_diff == 0:
-                    return
+                    time_diff = 1 #We cannot devide by 0 if the last 10 blocks have the same timestamp
                 
                 time_ratio = max(0.25, min(4.0, time_diff / AVERAGE_MINE_TIME))
                 last_target = bits_to_target(bytes.fromhex(last_block['BlockHeader']['bits']))
