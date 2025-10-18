@@ -85,14 +85,16 @@ Before getting started, ensure you have the following installed:
  3. To test with multiple nodes locally:
   - Duplicate the project folder for each additional node
   
-  - In each duplicated folder, modify the data/config.ini file:
-    - Change the P2P and API ports to unique values (ex port = 9999 for `[P2P]` and port = 9001 for `[API]`)
+  - In each duplicated folder, modify the `data/config.ini` file:
+    - Change the P2P and API ports to unique values (ex: port = 9999 for `[P2P]` and port = 9001 for `[API]`)
     - Add the first node as a "seed node" (no value)
     - In the `[SEED_NODES]` section (node2, node3,...), add the address of the first node (ex: node1 = 127.0.0.1:8889)
 
   - Run: 
     ```bash
     python KernelCLI.py # in each folder
+    
+  - Create a new wallet(4) and change miner address in settings(5) to the name of the new wallet 
 
 ## Versions
 
