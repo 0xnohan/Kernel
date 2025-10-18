@@ -9,7 +9,7 @@ from src.core.kmain.validator import Validator
 from src.core.kmain.utxo_manager import UTXOManager
 from src.core.kmain.mempool import MempoolManager
 from src.core.kmain.pow import check_pow
-from src.core.kmain.constants import MAX_HEADERS_TO_SEND, PING_INTERVAL
+from core.primitives.constants import MAX_HEADERS_TO_SEND, PING_INTERVAL
 from threading import Thread, Lock, RLock
 from src.core.net.messages import (
     Version, VerAck, GetAddr, Addr,

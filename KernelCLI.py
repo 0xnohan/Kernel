@@ -6,7 +6,7 @@ import subprocess
 import time
 import sys
 from src.utils.config_loader import load_config, update_config, get_config_dict
-from src.core.kmain.constants import FEE_RATE_FAST, FEE_RATE_NORMAL, FEE_RATE_SLOW
+from core.primitives.constants import FEE_RATE_FAST, FEE_RATE_NORMAL, FEE_RATE_SLOW
 
 def clearScreen():
     os.system('cls' if os.name == 'nt' else 'clear')

@@ -6,7 +6,7 @@ from src.core.primitives.transaction import TxIn, TxOut, Tx
 from src.database.db_manager import AccountDB
 from src.utils.elleptic_curve import PrivateKey
 
-from src.core.kmain.constants import TX_BASE_SIZE, TX_INPUT_SIZE, TX_OUTPUT_SIZE
+from core.primitives.constants import TX_BASE_SIZE, TX_INPUT_SIZE, TX_OUTPUT_SIZE
 
 class Send:
     def __init__(self, fromAccount, toAccount, Amount_float, feeRate, UTXOS, MEMPOOL):

@@ -6,7 +6,7 @@ from src.core.primitives.script import Script
 from src.utils.serialization import int_to_little_endian, bytes_needed, decode_base58
 from src.utils.config_loader import get_miner_wallet
 
-from src.core.kmain.constants import INITIAL_REWARD_KERNELS, HALVING_INTERVAL, REDUCTION_FACTOR
+from core.primitives.constants import INITIAL_REWARD_KERNELS, HALVING_INTERVAL, REDUCTION_FACTOR
 
 
 def load_miner_info():

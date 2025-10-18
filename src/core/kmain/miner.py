@@ -8,7 +8,7 @@ from src.core.kmain.pow import mine
 from src.utils.serialization import merkle_root, target_to_bits, bits_to_target
 
 from src.core.kmain.genesis import GENESIS_BITS
-from src.core.kmain.constants import (
+from core.primitives.constants import (
     VERSION,
     MAX_TARGET,
     RESET_DIFFICULTY_AFTER_BLOCKS,

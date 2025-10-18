@@ -7,7 +7,7 @@ from src.core.client.wallet import wallet
 from src.core.client.send import Send 
 from src.database.db_manager import AccountDB
 from src.utils.serialization import decode_base58
-from src.core.kmain.constants import FEE_RATE_NORMAL
+from core.primitives.constants import FEE_RATE_NORMAL
 from src.core.client.wallet import wallet as WalletClass
 
 
