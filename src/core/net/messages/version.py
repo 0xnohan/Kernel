@@ -1,6 +1,6 @@
 import time
 from src.utils.serialization import int_to_little_endian, little_endian_to_int
-from src.core.kmain.constants import VERSION
+from src.core.primitives.constants import VERSION
 
 class Version:
     command = b'version'

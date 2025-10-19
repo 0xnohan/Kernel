@@ -6,7 +6,12 @@ import subprocess
 import time
 import sys
 from src.utils.config_loader import load_config, update_config, get_config_dict
-from src.core.kmain.constants import FEE_RATE_FAST, FEE_RATE_NORMAL, FEE_RATE_SLOW
+from src.core.primitives.constants import FEE_RATE_FAST, FEE_RATE_NORMAL, FEE_RATE_SLOW
+
+running_processes = {
+    "daemon": None,
+    "miner": None
+}
 
 def clearScreen():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -22,47 +27,49 @@ def printLogo():
     """)
     print("\nWelcome to Kernel CLI")
 
-# Start the deamon in another terminal
+def start_process_in_new_terminal(script_path, process_key):
+    current_dir = os.getcwd()
+    
+    if sys.platform == "win32":
+        process = subprocess.Popen(f'start cmd /k "cd /d {current_dir} && {sys.executable} {script_path}"', shell=True)
+    elif sys.platform == "darwin":
+        script = f'tell app "Terminal" to do script "cd \\"{current_dir}\\" && \\"{sys.executable}\\" \\"{script_path}\\""'
+        process = subprocess.Popen(['osascript', '-e', script])
+    elif sys.platform.startswith('linux'):
+        process = subprocess.Popen(['gnome-terminal', '--', sys.executable, script_path], cwd=current_dir)
+    else:
+        print(f"Unsupported OS: {sys.platform}, please start {script_path} manually.")
+        return
+        
+    running_processes[process_key] = process
+    print(f"Started {process_key} in a new terminal")
+
 def start_daemon(host, rpc_port):
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(1)
             s.connect((host, rpc_port))
-        print("Kernel Daemon is already running.")
+        print("Kernel Daemon is already running")
         return
     except (ConnectionRefusedError, socket.timeout):
-        print("Starting Kernel Daemon in a new terminal...")
-        daemon_script_path = os.path.join('src', 'core', 'daemon', 'daemon.py')
-        current_dir = os.getcwd()
+        print("Starting Kernel Daemon...")
+        daemon_script_path = os.path.join('src', 'core', 'daemon', 'kerneld.py')
+        start_process_in_new_terminal(daemon_script_path, "daemon")
+        time.sleep(5) 
 
-        if sys.platform == "win32":
-            subprocess.Popen(f'start cmd /k "{sys.executable}" "{daemon_script_path}"', shell=True, cwd=current_dir)
+def shutdown_all(host, rpc_port):
+    print("\nStopping all processes...")
+    
+    miner_process = running_processes.get("miner")
+    if miner_process and miner_process.poll() is None:
+        print("Stopping miner process...")
+        miner_process.terminate()
+        running_processes["miner"] = None
 
-        elif sys.platform == "darwin":
-            script = f'tell app "Terminal" to do script "cd \\"{current_dir}\\" && \\"{sys.executable}\\" \\"{daemon_script_path}\\""'
-            subprocess.Popen(['osascript', '-e', script])
+    print("Sending shutdown command to daemon...")
+    SendRpcCommand(host, rpc_port, {"command": "shutdown"})
+    print("\nAll processes have been stopped")
 
-        elif sys.platform.startswith('linux'):
-            subprocess.Popen(['gnome-terminal', '--', sys.executable, daemon_script_path], cwd=current_dir)
-
-        else:
-            print(f"Unsupported OS: {sys.platform}, please start the daemon manually in another terminal")
-            print("run 'python {daemon_script_path}' in another terminal")
-
-        time.sleep(5)
-
-# Loading screen to wait for the deamon to setup
-def loading_screen():
-    print("\nConnecting to the network...")
-    animation = "|/-\\"
-    for i in range(50):
-        time.sleep(0.1)
-        sys.stdout.write("\r" + animation[i % len(animation)] + " ")
-        sys.stdout.flush()
-    print("\nConnected !")
-    time.sleep(1)
-
-# Send command to the Daemon
 def SendRpcCommand(host, rpc_port, command):
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -73,8 +80,8 @@ def SendRpcCommand(host, rpc_port, command):
     except ConnectionRefusedError:
         return {"status": "error", "message": "No connection. Please check if the daemon is running"}
     except Exception as e:
-        return {"status": "error", "message": f"Error: {e}"}
-
+        return {"status": "error", "message": f"RPC Error: {e}"}
+    
 def settings(host, rpc_port):
     while True:
         current_config = get_config_dict()
@@ -148,8 +155,7 @@ def main():
     rpc_port = int(config['API']['port']) + 1
 
     start_daemon(host, rpc_port)
-    loading_screen()
-    
+
     while True:
         clearScreen()
         printLogo()
@@ -166,9 +172,24 @@ def main():
 
         response = {}
         if choice == '1':
-            response = SendRpcCommand(host, rpc_port, {"command": "start_miner"})
+            print("Starting KernelX miner process...")
+            miner_script_path = os.path.join('KernelX', 'main.py')
+            if os.path.exists(miner_script_path):
+                start_process_in_new_terminal(miner_script_path, "miner")
+                response = {"message": "Miner process launched in a new window"}
+            else:
+                response = {"message": "Error: KernelX/main.py not found"}
+
         elif choice == '2':
-            response = SendRpcCommand(host, rpc_port, {"command": "stop_miner"})
+            miner_process = running_processes.get("miner")
+            if miner_process and miner_process.poll() is None:
+                print("Stopping miner process...")
+                miner_process.terminate()
+                running_processes["miner"] = None
+                response = {"message": "Miner process stopped"}
+            else:
+                response = {"message": "Miner process is not running"}
+
         elif choice == '3':
             wallets_response = SendRpcCommand(host, rpc_port, {"command": "get_wallets"})
             if wallets_response.get('status') == 'success' and wallets_response.get('wallets'):
@@ -225,7 +246,7 @@ def main():
             rpc_port = int(config['API']['port']) + 1
             continue
         elif choice == '6':
-            print("Exiting... Please close the Daemon terminal manually")
+            shutdown_all(host, rpc_port)
             break
         else:
             response = {"message": "Invalid choice. Please try again..."}
@@ -234,6 +255,7 @@ def main():
             print(f"\n[DAEMON] -> {response.get('message', 'No message')}")
 
         input("\nPress Enter to continue...")
+    
 
 if __name__ == "__main__":
     main()

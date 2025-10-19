@@ -1,6 +1,12 @@
 from src.utils.serialization import merkle_root
 from src.core.primitives.transaction import Tx
-from src.core.kmain.pow import check_pow
+from src.utils.crypto_hash import hash256
+from src.utils.serialization import little_endian_to_int, bits_to_target
+
+def check_pow(block_header):
+    sha = hash256(block_header.serialize())
+    proof = little_endian_to_int(sha)
+    return proof < bits_to_target(block_header.bits)
 
 class Validator:
     def __init__(self, utxos, mempool):
