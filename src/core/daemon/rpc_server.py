@@ -1,15 +1,45 @@
 import json
-import socket
-import configparser
-import os
+import socketserver
+from io import BytesIO
 
-from src.core.client.wallet import wallet 
-from src.core.client.send import Send 
-from src.database.db_manager import AccountDB
+from src.core.client.wallet import wallet
+from src.core.client.send import Send
+from src.database.db_manager import AccountDB, BlockchainDB
 from src.utils.serialization import decode_base58
-from core.primitives.constants import FEE_RATE_NORMAL
-from src.core.client.wallet import wallet as WalletClass
+from src.core.primitives.constants import FEE_RATE_NORMAL
+from src.core.kmain.mempool import MempoolManager
+from src.core.primitives.coinbase_tx import CoinbaseTx
+from src.core.primitives.block import Block
+from src.core.kmain.validator import Validator
+from src.core.kmain.utxo_manager import UTXOManager
+from src.core.kmain.difficulty import calculate_new_bits
 
+RPC_CONTEXT = {}
+
+def get_block_template(mempool, utxos):
+    db = BlockchainDB()
+    last_block = db.lastBlock()
+    if not last_block:
+        raise Exception("Blockchain has not been initialized")
+
+    mempool_manager = MempoolManager(mempool, utxos)
+    block_data = mempool_manager.get_transactions_for_block()
+    
+    height = last_block["Height"] + 1
+    coinbase_tx = CoinbaseTx(height).CoinbaseTransaction(fees=block_data["fees"])
+    if not coinbase_tx:
+        raise Exception("Impossible to create coinbase transaction")
+
+    transactions = [coinbase_tx.to_dict()] + [tx.to_dict() for tx in block_data["transactions"]]
+    bits = calculate_new_bits(height)
+
+    return {
+        "version": 1,
+        "previous_block_hash": last_block["BlockHeader"]["blockHash"],
+        "transactions": transactions,
+        "bits": bits.hex(), 
+        "height": height,
+    }
 
 def calculate_wallet_balances(wallets, utxos):
     balances = {wallet.get('PublicAddress'): 0 for wallet in wallets}
@@ -33,72 +63,168 @@ def calculate_wallet_balances(wallets, utxos):
         
     return wallets
 
-def handleRpcCommand(command, utxos, mempool, miningProcessManager, new_tx_queue=None):
-    cmd = command.get('command')
-    params = command.get('params', {})
-    
-    if cmd == 'ping':
-        return {"status": "success", "message": "pong"}
-
-    elif cmd == 'start_miner':
-        miningProcessManager['is_mining'] = True
-        return {"status": "success", "message": "Mining process started."}
-    
-    elif cmd == 'stop_miner':
-        miningProcessManager['is_mining'] = False
-        return {"status": "success", "message": "Mining process stopped."}
-        
-    elif cmd == 'create_wallet':
-        wallet_name = params.get('name')
-        if not wallet_name:
-            return {"status": "error", "message": "Wallet name is required"}
-        acc = wallet()
-        wallet_data = acc.createKeys(wallet_name)
-        if AccountDB().save_wallet(wallet_name, wallet_data):
-            return {"status": "success", "message": f"Wallet '{wallet_name}' created.", "wallet": wallet_data}
-        else:
-            return {"status": "error", "message": f"Wallet '{wallet_name}' already exists."}
-        
-    elif cmd == 'send_tx':
-        fee_rate = params.get('fee_rate', FEE_RATE_NORMAL)
-        send_handler = Send(params['from'], params['to'], float(params['amount']), fee_rate, utxos, mempool)
-        tx = send_handler.prepareTransaction()
-        if tx and new_tx_queue:
-            new_tx_queue.put(tx)
-            return {"status": "success", "message": "Transaction sent to daemon for processing", "txid": tx.id()}
-        elif not tx:
-            return {"status": "error", "message": "Failed to create transaction. Check balance and addresses."}
-        else:
-            return {"status": "error", "message": "Cannot broadcast transaction, daemon queue not available."}
-        
-    elif cmd == 'get_wallets':
+class TCPRequestHandler(socketserver.BaseRequestHandler):
+    def handle(self):
         try:
-            all_wallets = AccountDB().get_all_wallets()
-            wallets_with_balances = calculate_wallet_balances(all_wallets, utxos)
-            return {"status": "success", "wallets": wallets_with_balances}
-        except Exception as e:
-            return {"status": "error", "message": f"Could not retrieve wallets: {e}"}
-
-    elif cmd == 'shutdown':
-        miningProcessManager['shutdown_requested'] = True
-        return {"status": "success", "message": "Daemon shutdown initiated"}
-    
-    else:
-        return {"status": "error", "message": f"Command '{cmd}' not recognized"}
-
-def rpcServer(host, rpcPort, utxos, mempool, miningProcessManager, new_tx_queue=None):
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((host, rpcPort))
-        s.listen()
-        print(f"RPC server started, listening on port {rpcPort}")
-        while True:
-            conn, addr = s.accept()
-            with conn:
-                data = conn.recv(1024)
-                if not data: continue
+            full_data = b""
+            while True:
+                chunk = self.request.recv(4096)
+                if not chunk:
+                    break
+                full_data += chunk
                 try:
-                    command = json.loads(data.decode('utf-8'))
-                    response = handleRpcCommand(command, utxos, mempool, miningProcessManager, new_tx_queue)
+                    command = json.loads(full_data.decode('utf-8'))
+                    break
+                except json.JSONDecodeError:
+                    continue
+            
+            if not full_data:
+                return
+
+            cmd = command.get('command')
+            params = command.get('params', {})
+
+            utxos = RPC_CONTEXT.get('utxos')
+            mempool = RPC_CONTEXT.get('mempool')
+            new_tx_queue = RPC_CONTEXT.get('new_tx_queue')
+            broadcast_queue = RPC_CONTEXT.get('broadcast_queue')
+            new_block_event = RPC_CONTEXT.get('new_block_event')
+            mining_process_manager = RPC_CONTEXT.get('mining_process_manager')
+
+            response = {}
+
+            if cmd == 'ping':
+                response = {"status": "success", "message": "pong"}
+            
+            elif cmd == 'get_work':
+                new_block_event.wait(timeout=60.0)
+                new_block_event.clear() 
+                try:
+                    template = get_block_template(mempool, utxos)
+                    response = {"status": "success", "template": template}
                 except Exception as e:
-                    response = {"status": "error", "message": f"An unexpected error occurred: {e}"}
-                conn.sendall(json.dumps(response).encode('utf-8'))
+                    response = {"status": "error", "message": str(e)}
+
+            elif cmd == 'submit_block':
+                block_hex = params.get('block_hex')
+                if not block_hex:
+                    response = {"status": "error", "message": "block_hex parameter is required"}
+                else:
+                    try:
+                        block = Block.parse(BytesIO(bytes.fromhex(block_hex)))
+                        validator = Validator(utxos, mempool)
+                        db = BlockchainDB()
+
+                        if validator.validate_block(block, db):
+                            block.BlockHeader.to_hex()
+                            tx_json_list = [tx.to_dict() for tx in block.Txs]
+                            block_to_save = {
+                                "Height": block.Height, "Blocksize": block.Blocksize,
+                                "BlockHeader": block.BlockHeader.__dict__, "TxCount": len(tx_json_list),
+                                "Txs": tx_json_list
+                            }
+                            db.write([block_to_save])
+
+                            utxo_manager = UTXOManager(utxos)
+                            mempool_manager = MempoolManager(mempool, utxos)
+                            
+                            spent_outputs = [[tx_in.prev_tx, tx_in.prev_index] for tx in block.Txs[1:] for tx_in in tx.tx_ins]
+                            
+                            utxo_manager.remove_spent_utxos(spent_outputs)
+                            utxo_manager.add_new_utxos(block.Txs)
+                            mempool_manager.remove_transactions([bytes.fromhex(tx.id()) for tx in block.Txs])
+
+                            if broadcast_queue:
+                                broadcast_queue.put(block)
+                            
+                            new_block_event.set() 
+                            
+                            response = {"status": "success", "message": f"Block {block.Height} accepted"}
+                        else:
+                            response = {"status": "error", "message": "Block validation failed"}
+
+                    except Exception as e:
+                        import traceback
+                        traceback.print_exc()
+                        response = {"status": "error", "message": f"Error processing block:{e}"}
+
+            elif cmd == 'get_chain_height':
+                try:
+                    db = BlockchainDB()
+                    last_block = db.lastBlock()
+                    height = last_block['Height'] if last_block else -1
+                    response = {"status": "success", "height": height}
+                except Exception as e:
+                    response = {"status": "error", "message": f"Impossible to get chain height:{e}"}
+
+            elif cmd == 'create_wallet':
+                wallet_name = params.get('name')
+                if not wallet_name:
+                    response = {"status": "error", "message": "Wallet name is required"}
+                
+                acc = wallet()
+                wallet_data = acc.createKeys(wallet_name)
+                if AccountDB().save_wallet(wallet_name, wallet_data):
+                    response = {"status": "success", "message": f"Wallet '{wallet_name}' created.", "wallet": wallet_data}
+                else:
+                    response = {"status": "error", "message": f"Wallet '{wallet_name}' already exists."}
+
+            elif cmd == 'get_wallets':
+                try:
+                    all_wallets = AccountDB().get_all_wallets()
+                    wallets_with_balances = calculate_wallet_balances(all_wallets, utxos)
+                    response = {"status": "success", "wallets": wallets_with_balances}
+                except Exception as e:
+                    response = {"status": "error", "message": f"Could not retrieve wallets:{e}"}
+
+            elif cmd == 'send_tx':
+                try:
+                    fee_rate = params.get('fee_rate', FEE_RATE_NORMAL)
+                    send_handler = Send(params['from'], params['to'], float(params['amount']), int(fee_rate), utxos, mempool)
+                    tx = send_handler.prepareTransaction()
+                    if tx and new_tx_queue:
+                        new_tx_queue.put(tx)
+                        response = {"status": "success", "message": "Transaction sent to daemon for processing", "txid": tx.id()}
+                    elif not tx:
+                        response = {"status": "error", "message": "Failed to create transaction. Check balance and addresses."}
+                    else:
+                        response = {"status": "error", "message": "Cannot broadcast transaction, daemon queue not available."}
+                except Exception as e:
+                    response = {"status": "error", "message": f"Error sending transaction: {e}"}
+            
+            elif cmd == 'shutdown':
+                if mining_process_manager:
+                    mining_process_manager['shutdown_requested'] = True
+                response = {"status": "success", "message": "Daemon shutdown initiated"}
+
+            else:
+                response = {"status": "error", "message": f"Command '{cmd}' not recognized"}
+
+            self.request.sendall(json.dumps(response).encode('utf-8'))
+        except Exception as e:
+            print(f"Erreur dans le gestionnaire de requêtes RPC: {e}")
+
+class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    allow_reuse_address = True
+
+def rpcServer(host, rpcPort, utxos, mempool, mining_process_manager, new_tx_queue, broadcast_queue, new_block_event):
+    global RPC_CONTEXT
+    RPC_CONTEXT = {
+        'utxos': utxos,
+        'mempool': mempool,
+        'mining_process_manager': mining_process_manager,
+        'new_tx_queue': new_tx_queue,
+        'broadcast_queue': broadcast_queue,
+        'new_block_event': new_block_event,
+    }
+    
+    server = ThreadedTCPServer((host, rpcPort), TCPRequestHandler)
+    print(f"RPC server started, listening on port {rpcPort}")
+    
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.shutdown()
+        server.server_close()
