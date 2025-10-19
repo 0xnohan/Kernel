@@ -35,7 +35,7 @@ The project is now structured around a client-daemon architecture for better mod
 - **Wallet Management**: Create addresses and send transactions directly from the command-line client.
 - **Explorer API**: Exposes endpoints to track the chain's status, and view blocks, transactions, and addresses.
 - **Block Reward**: The block reward consist of an initial reward of 50 KNL per block. The reward is reduced by 25% every 250,000 blocks.
-  Amounts are denominated in KNL, divisible down to the smallest unit, the kernel (1 KNL = 10^8 kores).
+  Amounts are denominated in KNL, divisible down to the smallest unit, the kernel (1 KNL = 10^8 kernels).
   This geometrically decreasing reward ensures a finite total coin supply of 50 000 000 KNL
   
 ## Technologies Used
