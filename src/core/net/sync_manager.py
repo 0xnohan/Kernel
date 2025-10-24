@@ -8,8 +8,8 @@ from src.core.net.protocol import NetworkEnvelope
 from src.core.kmain.validator import Validator
 from src.core.kmain.utxo_manager import UTXOManager
 from src.core.kmain.mempool import MempoolManager
-from src.core.kmain.pow import check_pow
-from src.core.kmain.constants import MAX_HEADERS_TO_SEND, PING_INTERVAL
+from src.core.kmain.validator import check_pow
+from src.core.primitives.constants import MAX_HEADERS_TO_SEND, PING_INTERVAL
 from threading import Thread, Lock, RLock
 from src.core.net.messages import (
     Version, VerAck, GetAddr, Addr,
@@ -19,10 +19,10 @@ from src.core.net.messages import (
 )
 
 class SyncManager:
-    def __init__(self, host, port, newBlockAvailable=None, secondaryChain=None, mempool=None, utxos=None):
+    def __init__(self, host, port, new_block_event=None, secondaryChain=None, mempool=None, utxos=None):
         self.host = host
         self.port = port
-        self.newBlockAvailable = newBlockAvailable
+        self.new_block_event = new_block_event
         self.secondaryChain = secondaryChain
         self.mempool = mempool
         self.utxos = utxos
@@ -350,9 +350,9 @@ class SyncManager:
             
             self.broadcast_block(block_obj, origin_peer_socket)
             
-            if self.newBlockAvailable is not None:
-                self.newBlockAvailable.clear() 
-                self.newBlockAvailable[block_hash] = block_obj
+            if self.new_block_event:
+                print("Setting new block event for miners...")
+                self.new_block_event.set()
         else:
             print(f"Block {block_obj.Height} is invalid. Discarding")
 

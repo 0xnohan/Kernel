@@ -1,17 +1,16 @@
 import sys
 import os
-import argparse
-from multiprocessing import Process, Manager, Queue
+from multiprocessing import Process, Manager, Queue, Event
 import time
+from threading import Thread
 
 sys.path.append(os.getcwd())
 
-from src.core.kmain.miner import Miner
 from src.core.net.sync_manager import SyncManager
 from src.api.server import main as web_main
 from src.core.daemon.rpc_server import rpcServer
 from src.core.kmain.utxo_manager import UTXOManager
-from src.core.kmain.mempool import MempoolManager
+#from src.core.kmain.mempool import MempoolManager
 from src.utils.config_loader import load_config
 from threading import Thread
 from src.core.kmain.genesis import create_genesis_block
@@ -19,20 +18,12 @@ from src.database.db_manager import BlockchainDB
 from src.core.kmain.validator import Validator
 
 
-def handle_mined_blocks(mined_block_queue, sync_manager, utxo_manager, mempool_manager):
+def handle_broadcasts(broadcast_queue, sync_manager, new_block_event):
     while True:
-        mined_block = mined_block_queue.get()
-        #print(f"Daemon received mined block {mined_block.Height} from Miner process")
-        spent_outputs = []
-        for tx in mined_block.Txs[1:]: #Ignore coinbase
-            for tx_in in tx.tx_ins:
-                spent_outputs.append([tx_in.prev_tx, tx_in.prev_index])
-        
-        utxo_manager.remove_spent_utxos(spent_outputs)
-        utxo_manager.add_new_utxos(mined_block.Txs)
-        mempool_manager.remove_transactions([bytes.fromhex(tx.id()) for tx in mined_block.Txs])
-        #print("Daemon updated UTXO set and mempool")
-        sync_manager.broadcast_block(mined_block)
+        block_to_broadcast = broadcast_queue.get()
+        if block_to_broadcast and sync_manager:
+            sync_manager.broadcast_block(block_to_broadcast)
+            new_block_event.set()
 
 
 def handle_new_transactions(new_tx_queue, sync_manager, validator, mempool):
@@ -53,10 +44,6 @@ def handle_new_transactions(new_tx_queue, sync_manager, validator, mempool):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Kernel Daemon")
-    parser.add_argument("--mine", action="store_true", help="Start mining on launch")
-    args = parser.parse_args()
-
     config = load_config()
     
     host = config['NETWORK']['host']
@@ -67,18 +54,16 @@ def main():
     with Manager() as manager:
         utxos = manager.dict()
         mempool = manager.dict()
-        new_block_available = manager.dict() 
-        mining_process_manager = manager.dict({'is_mining': False, 'shutdown_requested': False})
+        mining_process_manager = manager.dict({'shutdown_requested': False})
         
-        #Miner-Deamon
-        mined_block_queue = Queue()
         new_tx_queue = Queue()
+        broadcast_queue = Queue()
+        new_block_event = Event()
 
         utxo_manager = UTXOManager(utxos)
-        mempool_manager = MempoolManager(mempool, utxos)
-        sync_manager = SyncManager(host, p2p_port, new_block_available, None, mempool, utxos)
+        sync_manager = SyncManager(host, p2p_port, new_block_event, None, mempool, utxos)
         validator = Validator(utxos, mempool)
-        
+
         # Thread P2P
         p2p_server_thread = Thread(target=sync_manager.spin_up_the_server)
         p2p_server_thread.daemon = True 
@@ -91,7 +76,7 @@ def main():
         print(f"API server started on port {api_port}")
         
         # RPC
-        processRPC = Process(target=rpcServer, args=(host, rpc_port, utxos, mempool, mining_process_manager, new_tx_queue))
+        processRPC = Process(target=rpcServer, args=(host, rpc_port, utxos, mempool, mining_process_manager, new_tx_queue, broadcast_queue, new_block_event))
         processRPC.start()
 
         # Init
@@ -112,15 +97,14 @@ def main():
         print("Initializing UTXO set...")
         utxo_manager.build_utxos_from_db()
         
-        # Listen to mined block
-        block_handler_thread = Thread(target=handle_mined_blocks, args=(mined_block_queue, sync_manager, utxo_manager, mempool_manager))
-        block_handler_thread.daemon = True
-        block_handler_thread.start()
-        
         # Listen to new transactions
         tx_handler_thread = Thread(target=handle_new_transactions, args=(new_tx_queue, sync_manager, validator, mempool))
         tx_handler_thread.daemon = True
         tx_handler_thread.start()
+    
+        broadcast_handler_thread = Thread(target=handle_broadcasts, args=(broadcast_queue, sync_manager, new_block_event))
+        broadcast_handler_thread.daemon = True
+        broadcast_handler_thread.start()
         
         time.sleep(2) 
         
@@ -135,23 +119,8 @@ def main():
                 except Exception as e:
                     print(f"Invalid seed node address format or connection failed: {address} ({e})")
         
-        mining_process = None
-        if args.mine:
-            mining_process_manager['is_mining'] = True
-
         try:
             while not mining_process_manager.get('shutdown_requested', False):
-                is_mining = mining_process_manager.get('is_mining', False)
-                if is_mining and (mining_process is None or not mining_process.is_alive()):
-                    print("Daemon is starting the Miner process...")
-                    miner = Miner(mempool, utxos, new_block_available, mined_block_queue)
-                    mining_process = Process(target=miner.run)
-                    mining_process.start()
-                elif not is_mining and (mining_process and mining_process.is_alive()):
-                    print("Daemon is stopping the Miner process...")
-                    mining_process.terminate()
-                    mining_process.join()
-                    mining_process = None
                 time.sleep(2)
 
         except KeyboardInterrupt:
@@ -162,8 +131,6 @@ def main():
                 processAPI.terminate()
             if processRPC.is_alive():
                 processRPC.terminate()
-            if mining_process and mining_process.is_alive():
-                mining_process.terminate()
 
 if __name__ == "__main__":
     main()
