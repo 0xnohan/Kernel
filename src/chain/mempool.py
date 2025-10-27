@@ -1,4 +1,4 @@
-class MempoolManager:
+class Mempool:
     def __init__(self, mempool, utxos):
         self.mempool = mempool
         self.utxos = utxos

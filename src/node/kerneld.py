@@ -7,16 +7,16 @@ import time
 
 sys.path.append(os.getcwd())
 
-from src.core.net.sync_manager import SyncManager
+from src.net.sync_manager import SyncManager
 from src.api.server import main as web_main
-from src.core.daemon.rpc_server import rpcServer
-from src.core.kmain.utxo_manager import UTXOManager
+from src.node.rpc_server import rpcServer
+from src.database.utxo_manager import UTXOManager
 from src.utils.config_loader import load_config
-from src.core.kmain.genesis import create_genesis_block
+from src.core.genesis import create_genesis_block
 from src.database.db_manager import BlockchainDB, UTXODB, MempoolDB, TxIndexDB
-from src.core.kmain.chain_manager import ChainManager
-from src.core.primitives.block import Block
-from src.core.kmain.validator import Validator
+from src.chain.chain_manager import ChainManager
+from src.core.block import Block
+from src.chain.validator import Validator
 
 
 def handle_broadcasts(broadcast_queue, sync_manager, new_block_event):

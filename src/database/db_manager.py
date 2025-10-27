@@ -5,7 +5,7 @@ import json
 import time
 from sqlitedict import SqliteDict
 from src.utils.serialization import bits_to_target
-from src.core.primitives.transaction import Tx
+from src.core.transaction import Tx
 
 
 class BaseDB:

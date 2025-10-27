@@ -5,10 +5,10 @@ import json
 
 sys.path.append(os.getcwd())
 
-from src.core.primitives.block import Block
-from src.core.primitives.blockheader import BlockHeader
-from src.core.primitives.transaction import Tx, TxIn, TxOut
-from src.core.primitives.script import Script
+from src.core.block import Block
+from src.core.blockheader import BlockHeader
+from src.core.transaction import Tx, TxIn, TxOut
+from src.scripts.script import Script
 from src.utils.serialization import merkle_root, target_to_bits, little_endian_to_int
 from src.utils.crypto_hash import hash256
 

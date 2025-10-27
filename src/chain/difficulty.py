@@ -1,7 +1,7 @@
 from src.database.db_manager import BlockchainDB
 from src.utils.serialization import target_to_bits, bits_to_target
-from src.core.primitives.constants import MAX_TARGET, RESET_DIFFICULTY_AFTER_BLOCKS, AVERAGE_MINE_TIME
-from src.core.kmain.genesis import GENESIS_BITS
+from src.chain.params import MAX_TARGET, RESET_DIFFICULTY_AFTER_BLOCKS, AVERAGE_MINE_TIME
+from src.core.genesis import GENESIS_BITS
 
 def calculate_new_bits(current_height):
     db = BlockchainDB()

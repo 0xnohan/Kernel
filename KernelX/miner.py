@@ -3,9 +3,9 @@ import socket
 import json
 from threading import Thread, Event
 
-from src.core.primitives.block import Block
-from src.core.primitives.blockheader import BlockHeader
-from src.core.primitives.transaction import Tx
+from src.core.block import Block
+from src.core.blockheader import BlockHeader
+from src.core.transaction import Tx
 from src.utils.serialization import merkle_root
 from KernelX.pow import mine
 

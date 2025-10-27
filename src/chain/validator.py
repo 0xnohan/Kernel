@@ -1,9 +1,9 @@
 from src.utils.serialization import merkle_root
-from src.core.primitives.transaction import Tx
+from src.core.transaction import Tx
 from src.utils.crypto_hash import hash256
 from src.utils.serialization import little_endian_to_int, bits_to_target
-from src.core.primitives.constants import MAX_BLOCK_SIZE 
-from src.core.primitives.coinbase_tx import CoinbaseTx
+from src.chain.params import MAX_BLOCK_SIZE 
+from src.core.coinbase_tx import CoinbaseTx
 
 def check_pow(block_header):
     sha = hash256(block_header.serialize())

@@ -1,5 +1,5 @@
 from src.database.db_manager import BlockchainDB
-from src.core.primitives.transaction import Tx
+from src.core.transaction import Tx
 
 class UTXOManager:
     def __init__(self, utxos):

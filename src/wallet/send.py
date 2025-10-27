@@ -1,12 +1,12 @@
 import time
 
 from src.utils.serialization import decode_base58
-from src.core.primitives.script import Script
-from src.core.primitives.transaction import TxIn, TxOut, Tx
+from src.scripts.script import Script
+from src.core.transaction import TxIn, TxOut, Tx
 from src.database.db_manager import AccountDB
 from src.utils.elleptic_curve import PrivateKey
 
-from src.core.primitives.constants import TX_BASE_SIZE, TX_INPUT_SIZE, TX_OUTPUT_SIZE,COIN
+from src.chain.params import TX_BASE_SIZE, TX_INPUT_SIZE, TX_OUTPUT_SIZE,COIN
 
 class Send:
     def __init__(self, fromAccount, toAccount, Amount_float, feeRate, UTXOS, MEMPOOL):

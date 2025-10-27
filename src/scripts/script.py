@@ -1,5 +1,5 @@
 from src.utils.serialization import int_to_little_endian, encode_varint, little_endian_to_int, read_varint
-from src.utils.opcodes import OP_CODE_FUNCTION
+from src.scripts.opcodes import OP_CODE_FUNCTION
 
 
 class Script:

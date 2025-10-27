@@ -1,10 +1,10 @@
 
-from src.core.primitives.transaction import Tx
+from src.core.transaction import Tx
 import time
-from src.core.kmain.utxo_manager import UTXOManager
-from src.core.kmain.mempool import MempoolManager
-from src.core.kmain.validator import Validator
-from src.core.primitives.block import Block
+from src.database.utxo_manager import UTXOManager
+from src.chain.mempool import Mempool
+from src.chain.validator import Validator
+from src.core.block import Block
 
 class ChainManager:
     def __init__(self, blockchain_db, utxo_db, mempool_db, txindex_db, new_block_event):
@@ -15,7 +15,7 @@ class ChainManager:
         self.new_block_event = new_block_event
         self.validator = Validator(self.utxos, self.mempool)
         self.utxo_manager = UTXOManager(self.utxos)
-        self.mempool_manager = MempoolManager(self.mempool, self.utxos)
+        self.mempool_manager = Mempool(self.mempool, self.utxos)
 
     def process_new_block(self, block_obj):
         block_hash = block_obj.BlockHeader.generateBlockHash()

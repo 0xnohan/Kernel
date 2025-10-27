@@ -1,6 +1,6 @@
 import socket 
-from src.core.net.protocol import NetworkEnvelope
-from src.core.primitives.constants import P2P_TIMEOUT
+from src.net.protocol import NetworkEnvelope
+from src.chain.params import P2P_TIMEOUT
 
 class Node:
     def __init__(self, host, port):

@@ -2,17 +2,17 @@ import json
 import socketserver
 from io import BytesIO
 
-from src.core.client.wallet import wallet
-from src.core.client.send import Send
+from src.wallet.wallet import wallet
+from src.wallet.send import Send
 from src.database.db_manager import AccountDB, BlockchainDB
 from src.utils.serialization import decode_base58
-from src.core.primitives.constants import FEE_RATE_NORMAL
-from src.core.kmain.mempool import MempoolManager
-from src.core.primitives.coinbase_tx import CoinbaseTx
-from src.core.primitives.block import Block
-from src.core.kmain.validator import Validator
-from src.core.kmain.utxo_manager import UTXOManager
-from src.core.kmain.difficulty import calculate_new_bits
+from src.chain.params import FEE_RATE_NORMAL
+from src.chain.mempool import Mempool
+from src.core.coinbase_tx import CoinbaseTx
+from src.core.block import Block
+from src.chain.validator import Validator
+from database.utxo_manager import UTXOManager
+from src.chain.difficulty import calculate_new_bits
 
 RPC_CONTEXT = {}
 
@@ -22,7 +22,7 @@ def get_block_template(mempool, utxos):
     if not last_block:
         raise Exception("Blockchain has not been initialized")
 
-    mempool_manager = MempoolManager(mempool, utxos)
+    mempool_manager = Mempool(mempool, utxos)
     block_data = mempool_manager.get_transactions_for_block()
     
     height = last_block["Height"] + 1

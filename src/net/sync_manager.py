@@ -1,17 +1,17 @@
 import socket
 import time
-from src.core.primitives.block import Block
-from src.core.net.connection import Node
+from src.core.block import Block
+from src.net.connection import Node
 from src.database.db_manager import BlockchainDB
-from src.core.primitives.transaction import Tx
-from src.core.net.protocol import NetworkEnvelope
-from src.core.kmain.validator import Validator
-from src.core.kmain.utxo_manager import UTXOManager
-from src.core.kmain.mempool import MempoolManager
-from src.core.kmain.validator import check_pow
-from src.core.primitives.constants import MAX_HEADERS_TO_SEND, PING_INTERVAL
+from src.core.transaction import Tx
+from src.net.protocol import NetworkEnvelope
+from src.chain.validator import Validator
+from src.database.utxo_manager import UTXOManager
+from src.chain.mempool import Mempool
+from src.chain.validator import check_pow
+from src.chain.params import MAX_HEADERS_TO_SEND, PING_INTERVAL
 from threading import Thread, Lock, RLock
-from src.core.net.messages import (
+from src.net.messages import (
     Version, VerAck, GetAddr, Addr,
     GetHeaders, Headers, Inv, GetData, 
     Tx, Block, Ping, Pong,
@@ -33,7 +33,7 @@ class SyncManager:
         self.db = BlockchainDB()
         
         self.utxo_manager = UTXOManager(self.utxos)
-        self.mempool_manager = MempoolManager(self.mempool, self.utxos)
+        self.mempool_manager = Mempool(self.mempool, self.utxos)
 
         self.peer_handshake_status = {}
         self.peers = {} 
@@ -206,7 +206,7 @@ class SyncManager:
         last_block = self.db.lastBlock()
         
         if not last_block:
-            from src.core.kmain.genesis import GENESIS_BLOCK_HASH
+            from src.core.genesis import GENESIS_BLOCK_HASH
             start_block_hash = bytes.fromhex(GENESIS_BLOCK_HASH)
         else:
             start_block_hash = bytes.fromhex(last_block['BlockHeader']['blockHash'])

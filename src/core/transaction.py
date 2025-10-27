@@ -1,4 +1,4 @@
-from src.core.primitives.script import Script
+from src.scripts.script import Script
 from src.utils.serialization import (
     int_to_little_endian,
     bytes_needed,
