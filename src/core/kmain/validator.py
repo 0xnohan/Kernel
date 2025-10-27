@@ -61,21 +61,20 @@ class Validator:
         return True
 
 
-    def validate_block(self, block, db):
-        last_block = db.lastBlock()
-    
-        if last_block and block.Height != last_block['Height'] + 1:
-            print(f"Block validation failed (Block {block.Height}): Invalid height, expected {last_block['Height'] + 1}")
+    def validate_block_header(self, block_header, db):
+        if not check_pow(block_header):
+            print(f"Header validation failed: Invalid Proof of Work")
             return False
         
-        if not check_pow(block.BlockHeader):
-            print(f"Block validation failed (Block {block.Height}): Invalid Proof of Work")
+        prev_hash = block_header.prevBlockHash.hex()
+        if prev_hash != '00' * 32 and not db.get_index(prev_hash):
+            print(f"Header validation failed: Previous hash {prev_hash[:10]}... is unknown.")
             return False
             
-        if block.BlockHeader.prevBlockHash.hex() != last_block['BlockHeader']['blockHash']:
-            print(f"Block validation failed (Block {block.Height}): Previous hash does not match")
-            return False
+        # TODO: Add timestamp check (e.g., not after 2 hours in future)
+        return True
 
+    def validate_block_body(self, block, db):
         tx_ids = [bytes.fromhex(tx.id()) for tx in block.Txs]
         calculated_merkle_root = merkle_root(tx_ids)[::-1]
         
@@ -84,16 +83,22 @@ class Validator:
             return False
 
         spent_utxos_in_block = set()
-        for tx in block.Txs[1:]:
+        for tx in block.Txs[1:]: 
             for tx_in in tx.tx_ins:
                 utxo_id = f"{tx_in.prev_tx.hex()}_{tx_in.prev_index}"
                 if utxo_id in spent_utxos_in_block:
                     print(f"Block validation failed (Block {block.Height}): Double spend inside the same block for UTXO {utxo_id}")
                     return False
                 spent_utxos_in_block.add(utxo_id)
-
-            if not self.validate_transaction(tx, is_in_block=True):
-                print(f"Block validation failed (Block {block.Height}): Invalid transaction {tx.id()}")
-                return False
         
+        # TODO: Check coinbase transaction rules (e.g., correct reward, script format)
+        # TODO: Check block size against MAX_BLOCK_SIZE constant
+        
+        return True
+
+    def validate_block_transactions(self, Txs, is_in_block=True):
+        for tx in Txs[1:]: 
+            if not self.validate_transaction(tx, is_in_block=True):
+                print(f"Block connection failed: Invalid transaction {tx.id()}")
+                return False
         return True

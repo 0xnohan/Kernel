@@ -18,7 +18,7 @@ RPC_CONTEXT = {}
 
 def get_block_template(mempool, utxos):
     db = BlockchainDB()
-    last_block = db.lastBlock()
+    last_block = db.lastBlock() 
     if not last_block:
         raise Exception("Blockchain has not been initialized")
 
@@ -41,24 +41,26 @@ def get_block_template(mempool, utxos):
         "height": height,
     }
 
-def calculate_wallet_balances(wallets, utxos):
-    balances = {wallet.get('PublicAddress'): 0 for wallet in wallets}
-    
-    for tx_obj in utxos.values():
-        if hasattr(tx_obj, 'tx_outs'):
-            for tx_out in tx_obj.tx_outs:
-                try:
-                    pubKeyHash = tx_out.script_pubkey.cmds[2]
-                    for wallet in wallets:
-                        wallet_h160 = decode_base58(wallet.get('PublicAddress'))
-                        if wallet_h160 == pubKeyHash:
-                            balances[wallet.get('PublicAddress')] += tx_out.amount
-                            break
-                except (AttributeError, IndexError, KeyError):
-                    continue
-    
+def calculate_wallet_balances(wallets, utxos_db):
+    wallet_map = {} 
+    h160_list = []
     for wallet in wallets:
-        balance_knl = balances.get(wallet.get('PublicAddress'), 0) / 100000000
+        wallet['balance'] = 0.0 
+        try:
+            h160_bytes = decode_base58(wallet.get('PublicAddress'))
+            h160_hex = h160_bytes.hex()
+            wallet_map[h160_hex] = wallet
+            h160_list.append(h160_bytes)
+        except Exception:
+            continue
+    
+    if not h160_list:
+        return wallets
+
+    balances_kernels = utxos_db.get_balances(h160_list)
+    
+    for h160_hex, wallet in wallet_map.items():
+        balance_knl = balances_kernels.get(h160_hex, 0) / 100000000
         wallet['balance'] = balance_knl
         
     return wallets
@@ -90,6 +92,7 @@ class TCPRequestHandler(socketserver.BaseRequestHandler):
             broadcast_queue = RPC_CONTEXT.get('broadcast_queue')
             new_block_event = RPC_CONTEXT.get('new_block_event')
             mining_process_manager = RPC_CONTEXT.get('mining_process_manager')
+            chain_manager = RPC_CONTEXT.get('chain_manager')
 
             response = {}
 
@@ -109,45 +112,22 @@ class TCPRequestHandler(socketserver.BaseRequestHandler):
                 block_hex = params.get('block_hex')
                 if not block_hex:
                     response = {"status": "error", "message": "block_hex parameter is required"}
+                elif not chain_manager:
+                    response = {"status": "error", "message": "ChainManager is not available"}
                 else:
                     try:
                         block = Block.parse(BytesIO(bytes.fromhex(block_hex)))
-                        validator = Validator(utxos, mempool)
-                        db = BlockchainDB()
-
-                        if validator.validate_block(block, db):
-                            block.BlockHeader.to_hex()
-                            tx_json_list = [tx.to_dict() for tx in block.Txs]
-                            block_to_save = {
-                                "Height": block.Height, "Blocksize": block.Blocksize,
-                                "BlockHeader": block.BlockHeader.__dict__, "TxCount": len(tx_json_list),
-                                "Txs": tx_json_list
-                            }
-                            db.write([block_to_save])
-
-                            utxo_manager = UTXOManager(utxos)
-                            mempool_manager = MempoolManager(mempool, utxos)
-                            
-                            spent_outputs = [[tx_in.prev_tx, tx_in.prev_index] for tx in block.Txs[1:] for tx_in in tx.tx_ins]
-                            
-                            utxo_manager.remove_spent_utxos(spent_outputs)
-                            utxo_manager.add_new_utxos(block.Txs)
-                            mempool_manager.remove_transactions([bytes.fromhex(tx.id()) for tx in block.Txs])
-
-                            if broadcast_queue:
-                                broadcast_queue.put(block)
-                            
-                            new_block_event.set() 
-                            
-                            response = {"status": "success", "message": f"Block {block.Height} accepted"}
+                        if chain_manager.process_new_block(block):
+                            response = {"status": "success", "message": f"Block {block.Height} accepted by ChainManager"}
+                            broadcast_queue.put(block) 
                         else:
-                            response = {"status": "error", "message": "Block validation failed"}
+                            response = {"status": "error", "message": "Block validation failed or was rejected by ChainManager"}
 
                     except Exception as e:
                         import traceback
                         traceback.print_exc()
                         response = {"status": "error", "message": f"Error processing block:{e}"}
-
+            
             elif cmd == 'get_chain_height':
                 try:
                     db = BlockchainDB()
@@ -172,7 +152,7 @@ class TCPRequestHandler(socketserver.BaseRequestHandler):
             elif cmd == 'get_wallets':
                 try:
                     all_wallets = AccountDB().get_all_wallets()
-                    wallets_with_balances = calculate_wallet_balances(all_wallets, utxos)
+                    wallets_with_balances = calculate_wallet_balances(all_wallets, utxos) 
                     response = {"status": "success", "wallets": wallets_with_balances}
                 except Exception as e:
                     response = {"status": "error", "message": f"Could not retrieve wallets:{e}"}
@@ -207,7 +187,7 @@ class TCPRequestHandler(socketserver.BaseRequestHandler):
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
 
-def rpcServer(host, rpcPort, utxos, mempool, mining_process_manager, new_tx_queue, broadcast_queue, new_block_event):
+def rpcServer(host, rpcPort, utxos, mempool, mining_process_manager, new_tx_queue, broadcast_queue, new_block_event, chain_manager):
     global RPC_CONTEXT
     RPC_CONTEXT = {
         'utxos': utxos,
@@ -216,6 +196,7 @@ def rpcServer(host, rpcPort, utxos, mempool, mining_process_manager, new_tx_queu
         'new_tx_queue': new_tx_queue,
         'broadcast_queue': broadcast_queue,
         'new_block_event': new_block_event,
+        'chain_manager': chain_manager, 
     }
     
     server = ThreadedTCPServer((host, rpcPort), TCPRequestHandler)

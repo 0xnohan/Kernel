@@ -18,14 +18,16 @@ from src.core.net.messages import (
     INV_TYPE_TX, INV_TYPE_BLOCK
 )
 
+
 class SyncManager:
-    def __init__(self, host, port, new_block_event=None, secondaryChain=None, mempool=None, utxos=None):
+    def __init__(self, host, port, new_block_event=None, secondaryChain=None, mempool=None, utxos=None, chain_manager=None):
         self.host = host
         self.port = port
         self.new_block_event = new_block_event
         self.secondaryChain = secondaryChain
         self.mempool = mempool
         self.utxos = utxos
+        self.chain_manager = chain_manager 
 
         self.validator = Validator(self.utxos, self.mempool)
         self.db = BlockchainDB()
@@ -45,7 +47,8 @@ class SyncManager:
     def send_message(self, sock, message):
         envelope = NetworkEnvelope(message.command, message.serialize())
         sock.sendall(envelope.serialize()) 
-        print(f"-> Sent {message.command.decode()} to {sock.getpeername()}")
+        #print(f"-> Sent {message.command.decode()} to {sock.getpeername()}")
+        pass
 
 
     def connect_to_peer(self, host, port):
@@ -220,6 +223,9 @@ class SyncManager:
         
         if not all_blocks and getheaders_msg.start_block.hex() == '00'*32:
             found_start = True
+        
+        if getheaders_msg.start_block.hex() == '00'*32:
+            found_start = True
 
         for block_data in all_blocks:
             if not found_start and block_data['BlockHeader']['blockHash'] == getheaders_msg.start_block.hex():
@@ -274,13 +280,7 @@ class SyncManager:
                 if item_hash.hex() not in self.mempool:
                     items_to_get.append((INV_TYPE_TX, item_hash))
             elif item_type == INV_TYPE_BLOCK:
-                block_exists = False
-                all_blocks = self.db.read()
-                for block_data in all_blocks:
-                    if block_data['BlockHeader']['blockHash'] == item_hash.hex():
-                        block_exists = True
-                        break
-                if not block_exists:
+                if not self.db.get_block(item_hash.hex()):
                     items_to_get.append((INV_TYPE_BLOCK, item_hash))
         
         if items_to_get:
@@ -298,13 +298,11 @@ class SyncManager:
                     self.send_message(conn, tx_msg)
             elif item_type == INV_TYPE_BLOCK:
                 block_hash_hex = item_hash.hex()
-                all_blocks = self.db.read()
-                for block_data in all_blocks:
-                    if block_data['BlockHeader']['blockHash'] == block_hash_hex:
-                        block_obj = Block.to_obj(block_data)
-                        block_msg = Block(block_obj.Height, block_obj.Blocksize, block_obj.BlockHeader, block_obj.Txcount, block_obj.Txs)
-                        self.send_message(conn, block_msg)
-                        break
+                block_data = self.db.get_block(block_hash_hex)
+                if block_data:
+                    block_obj = Block.to_obj(block_data)
+                    block_msg = Block(block_obj.Height, block_obj.Blocksize, block_obj.BlockHeader, block_obj.Txcount, block_obj.Txs)
+                    self.send_message(conn, block_msg)
 
     def handle_tx(self, tx_obj, origin_peer_socket=None):
         tx_id = tx_obj.id()
@@ -320,41 +318,15 @@ class SyncManager:
 
     def handle_block(self, block_obj, origin_peer_socket=None):
         block_hash = block_obj.BlockHeader.generateBlockHash()
-        print(f"Received block {block_obj.Height} ({block_hash[:10]}...). Validating...")
+        print(f"Received block {block_obj.Height} ({block_hash[:10]}...). Passing to ChainManager.")
         
-        if self.validator.validate_block(block_obj, self.db):
-            block_obj.BlockHeader.to_hex()
-            tx_json_list = [tx.to_dict() for tx in block_obj.Txs]
-            block_to_save = {
-                "Height": block_obj.Height,
-                "Blocksize": block_obj.Blocksize,
-                "BlockHeader": block_obj.BlockHeader.__dict__,
-                "TxCount": block_obj.Txcount,
-                "Txs": tx_json_list
-            }
-            self.db.write([block_to_save])
-            print(f"Block {block_obj.Height} successfully added to the blockchain")
-            
-            spent_outputs = []
-            for tx in block_obj.Txs[1:]:
-                for tx_in in tx.tx_ins:
-                    spent_outputs.append([tx_in.prev_tx, tx_in.prev_index])
-            
-            self.utxo_manager.remove_spent_utxos(spent_outputs)
-            self.utxo_manager.add_new_utxos(block_obj.Txs)
-            print(f"UTXO set updated after processing block {block_obj.Height}")
-
-            tx_ids_in_block = [bytes.fromhex(tx.id()) for tx in block_obj.Txs]
-            self.mempool_manager.remove_transactions(tx_ids_in_block)
-            print(f"Mempool cleaned after processing block {block_obj.Height}")
-            
-            self.broadcast_block(block_obj, origin_peer_socket)
-            
-            if self.new_block_event:
-                print("Setting new block event for miners...")
-                self.new_block_event.set()
+        if self.chain_manager:
+            if self.chain_manager.process_new_block(block_obj):
+                self.broadcast_block(block_obj, origin_peer_socket)
+            else:
+                print(f"ChainManager rejected block {block_hash[:10]}...")
         else:
-            print(f"Block {block_obj.Height} is invalid. Discarding")
+            print("WARN: ChainManager not initialized in SyncManager")
 
     def cleanup_peer_connection(self, peer_id, conn):
         if conn:
