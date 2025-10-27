@@ -7,14 +7,15 @@ from src.core.kmain.validator import Validator
 from src.core.primitives.block import Block
 
 class ChainManager:
-    def __init__(self, blockchain_db, utxo_db, mempool_db, new_block_event):
+    def __init__(self, blockchain_db, utxo_db, mempool_db, txindex_db, new_block_event):
         self.db = blockchain_db
         self.utxos = utxo_db
         self.mempool = mempool_db
+        self.txindex = txindex_db
+        self.new_block_event = new_block_event
         self.validator = Validator(self.utxos, self.mempool)
         self.utxo_manager = UTXOManager(self.utxos)
         self.mempool_manager = MempoolManager(self.mempool, self.utxos)
-        self.new_block_event = new_block_event
 
     def process_new_block(self, block_obj):
         block_hash = block_obj.BlockHeader.generateBlockHash()
@@ -99,20 +100,26 @@ class ChainManager:
         self.new_block_event.set()
 
     def connect_block(self, block_obj):
-        if not self.validator.validate_block_transactions(block_obj.Txs, is_in_block=True):
+        if not self.validator.validate_block_transactions(block_obj, is_in_block=True):
             print(f"Block {block_obj.Height} failed context-full tx validation. Aborting connect.")
-            # TODO: Mark this block as invalid in the index (e.g., status='invalid-txs')
             return False
         
+        block_hash = block_obj.BlockHeader.generateBlockHash()
+        tx_ids_in_block = []
+
+        for tx in block_obj.Txs:
+            tx_id = tx.id()
+            tx_ids_in_block.append(bytes.fromhex(tx_id))
+            self.txindex[tx_id] = block_hash
+
         spent_outputs = [[tx_in.prev_tx, tx_in.prev_index] for tx in block_obj.Txs[1:] for tx_in in tx.tx_ins]
         
         self.utxo_manager.remove_spent_utxos(spent_outputs)
         self.utxo_manager.add_new_utxos(block_obj.Txs)
         
-        tx_ids_in_block = [bytes.fromhex(tx.id()) for tx in block_obj.Txs]
         self.mempool_manager.remove_transactions(tx_ids_in_block)
         
-        print(f"Connected block {block_obj.Height}. UTXOs and mempool updated")
+        print(f"Connected block {block_obj.Height}. UTXOs and mempool updated.")
         return True
 
     def disconnect_block(self, block_obj):
@@ -120,7 +127,10 @@ class ChainManager:
             tx_id_hex = tx.id()
             if tx_id_hex in self.utxos:
                 del self.utxos[tx_id_hex]
-
+            
+            if tx_id_hex in self.txindex:
+                del self.txindex[tx_id_hex]
+ 
         for tx in block_obj.Txs[1:]: 
             for tx_in in tx.tx_ins:
                 prev_tx_hash = tx_in.prev_tx.hex()
@@ -135,7 +145,7 @@ class ChainManager:
                             self.utxos[prev_tx_hash] = Tx.to_obj(tx_dict)
                             break
                 else:
-                    print(f"WARN: Could not find parent tx {prev_tx_hash[:10]}... during disconnect")
+                    print(f"WARN: Could not find parent tx {prev_tx_hash[:10]}... during disconnect.")
 
         for tx in block_obj.Txs[1:]:
             tx_id = tx.id()
@@ -145,17 +155,27 @@ class ChainManager:
                 else:
                     print(f"Orphaned tx {tx_id[:10]}... is no longer valid. Discarding.")
                     
-        print(f"Disconnected block {block_obj.Height}. UTXOs restored, txs returned to mempool")
+        print(f"Disconnected block {block_obj.Height}. UTXOs restored, txs returned to mempool.")
         return True
 
     def find_tx_block_in_chain(self, tx_id):
-        #Slow tx lookup for, optimize with tx_index
+        block_hash = self.txindex.get(tx_id)
+        if not block_hash:
+            print(f"WARN: Transaction {tx_id[:10]}... not found in txindex")
+            return self.find_tx_block_in_chain_slow(tx_id)
         
+        block = self.db.get_block(block_hash)
+        if not block:
+            print(f"FATAL: txindex points to block {block_hash} for tx {tx_id}, but block is not in DB")
+            return None
+            
+        return block
+    
+    def find_tx_block_in_chain_slow(self, tx_id):
         for block in self.db.read():
             for tx in block.get("Txs", []):
                 if tx.get("TxId") == tx_id:
                     return block
-        
         for block_hash in self.db.db.keys():
             block = self.db.get_block(block_hash)
             if not block: continue

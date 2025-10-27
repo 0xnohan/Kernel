@@ -2,6 +2,8 @@ from src.utils.serialization import merkle_root
 from src.core.primitives.transaction import Tx
 from src.utils.crypto_hash import hash256
 from src.utils.serialization import little_endian_to_int, bits_to_target
+from src.core.primitives.constants import MAX_BLOCK_SIZE 
+from src.core.primitives.coinbase_tx import CoinbaseTx
 
 def check_pow(block_header):
     sha = hash256(block_header.serialize())
@@ -75,6 +77,19 @@ class Validator:
         return True
 
     def validate_block_body(self, block, db):
+        if len(block.serialize()) > MAX_BLOCK_SIZE:
+            print(f"Block validation failed (Block {block.Height}): Block size exceeds {MAX_BLOCK_SIZE}")
+            return False
+
+        if not block.Txs or not block.Txs[0].is_coinbase():
+            print(f"Block validation failed (Block {block.Height}): First tx is not a coinbase")
+            return False
+        
+        for i, tx in enumerate(block.Txs[1:]):
+            if tx.is_coinbase():
+                print(f"Block validation failed (Block {block.Height}): Found coinbase tx at index {i+1}")
+                return False
+
         tx_ids = [bytes.fromhex(tx.id()) for tx in block.Txs]
         calculated_merkle_root = merkle_root(tx_ids)[::-1]
         
@@ -91,14 +106,48 @@ class Validator:
                     return False
                 spent_utxos_in_block.add(utxo_id)
         
-        # TODO: Check coinbase transaction rules (e.g., correct reward, script format)
-        # TODO: Check block size against MAX_BLOCK_SIZE constant
-        
         return True
 
-    def validate_block_transactions(self, Txs, is_in_block=True):
-        for tx in Txs[1:]: 
+    def validate_block_transactions(self, block, is_in_block=True):
+        if not self.validate_coinbase_reward(block):
+            return False
+        
+        for tx in block.Txs[1:]: 
             if not self.validate_transaction(tx, is_in_block=True):
                 print(f"Block connection failed: Invalid transaction {tx.id()}")
                 return False
+        return True
+    
+    
+    def validate_coinbase_reward(self, block):
+        coinbase_gen = CoinbaseTx(block.Height)
+        expected_reward = coinbase_gen.calculate_reward()
+        total_fees = 0
+        for tx in block.Txs[1:]:
+            input_sum = 0
+            output_sum = 0
+            
+            for tx_in in tx.tx_ins:
+                prev_tx_obj = self.utxos.get(tx_in.prev_tx.hex())
+                if not prev_tx_obj:
+                    print(f"Block validation failed (Block {block.Height}): Could not find prev_tx {tx_in.prev_tx.hex()} for fee calculation.")
+                    return False
+                try:
+                    input_sum += prev_tx_obj.tx_outs[tx_in.prev_index].amount
+                except IndexError:
+                    print(f"Block validation failed (Block {block.Height}): Invalid index {tx_in.prev_index} for fee calculation.")
+                    return False
+            
+            for tx_out in tx.tx_outs:
+                output_sum += tx_out.amount
+            
+            total_fees += (input_sum - output_sum)
+        coinbase_tx = block.Txs[0]
+        total_coinbase_output = sum(tx_out.amount for tx_out in coinbase_tx.tx_outs)
+        expected_total_output = expected_reward + total_fees
+        
+        if total_coinbase_output > expected_total_output:
+            print(f"Block validation failed (Block {block.Height}): Coinbase reward too high. Got {total_coinbase_output}, expected {expected_total_output} (Reward: {expected_reward}, Fees: {total_fees})")
+            return False
+            
         return True

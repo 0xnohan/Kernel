@@ -13,7 +13,7 @@ from src.core.daemon.rpc_server import rpcServer
 from src.core.kmain.utxo_manager import UTXOManager
 from src.utils.config_loader import load_config
 from src.core.kmain.genesis import create_genesis_block
-from src.database.db_manager import BlockchainDB, UTXODB, MempoolDB
+from src.database.db_manager import BlockchainDB, UTXODB, MempoolDB, TxIndexDB
 from src.core.kmain.chain_manager import ChainManager
 from src.core.primitives.block import Block
 from src.core.kmain.validator import Validator
@@ -59,11 +59,12 @@ def main():
     db = BlockchainDB()
     utxos_db = UTXODB()
     mempool_db = MempoolDB()
+    txindex_db = TxIndexDB()
 
     mempool_db.clear()
     print("Persistent mempool cleared")
 
-    chain_manager = ChainManager(db, utxos_db, mempool_db, new_block_event)
+    chain_manager = ChainManager(db, utxos_db, mempool_db, txindex_db, new_block_event)
     utxo_manager = UTXOManager(utxos_db)
     validator = Validator(utxos_db, mempool_db)
 
@@ -85,9 +86,9 @@ def main():
         else:
             print("Genesis block found in DB.")
 
-        print("Connecting Genesis block to UTXO set...")
+        print("Connecting Genesis block to UTXO set and TxIndex...")
         chain_manager.connect_block(genesis) 
-        db.set_main_chain_tip(genesis_hash)  
+        db.set_main_chain_tip(genesis_hash)
         utxos_db.set_meta('last_block_hash', genesis_hash)
         utxos_db.commit()
         print("Genesis block processed.")
@@ -99,12 +100,24 @@ def main():
         print(f"UTXO set is in sync with main chain tip: {last_hash_chain[:10]}...")
         print(f"Loaded {len(utxos_db)} UTXOs.")
     else:
-        print(f"UTXO set is out of sync (Chain: {last_hash_chain[:10]}..., UTXO: {str(last_hash_utxo_db)[:10]}...).")
-        print("Rebuilding UTXO set from main chain... This may take a while.")
+        print(f"UTXO set is out of sync. Rebuilding... This may take a while.")
+        print("Clearing TxIndex for rebuild...")
+        txindex_db.clear()
+        
+        print("Rebuilding UTXO set...")
         utxo_manager.build_utxos_from_db() 
+        
+        print("Rebuilding TxIndex...")
+        all_blocks = db.read() 
+        for block_dict in all_blocks:
+            block_hash = block_dict['BlockHeader']['blockHash']
+            for tx in block_dict['Txs']:
+                txindex_db[tx['TxId']] = block_hash
+        print("TxIndex rebuilt.")
+
         utxos_db.set_meta('last_block_hash', last_hash_chain)
         utxos_db.commit()
-        print(f"UTXO set rebuilt. {len(utxos_db)} UTXOs found.")
+        print(f"UTXO set rebuilt. {len(utxos_db)} UTXOs found")
 
     sync_manager = SyncManager(host, p2p_port, new_block_event, None, mempool_db, utxos_db, chain_manager)
 
