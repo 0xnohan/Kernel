@@ -1,4 +1,4 @@
-from src.core.primitives.transaction import Tx as TxClass
+from src.core.transaction import Tx as TxClass
 
 class Tx(TxClass):
     command = b'tx'

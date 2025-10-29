@@ -1,4 +1,4 @@
-from src.core.primitives.blockheader import BlockHeader
+from src.core.blockheader import BlockHeader
 from src.utils.serialization import read_varint, encode_varint
 
 class Headers:

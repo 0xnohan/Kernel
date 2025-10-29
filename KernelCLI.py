@@ -6,7 +6,7 @@ import subprocess
 import time
 import sys
 from src.utils.config_loader import load_config, update_config, get_config_dict
-from chain.params import FEE_RATE_FAST, FEE_RATE_NORMAL, FEE_RATE_SLOW
+from src.chain.params import FEE_RATE_FAST, FEE_RATE_NORMAL, FEE_RATE_SLOW
 
 running_processes = {
     "daemon": None,
@@ -53,8 +53,8 @@ def start_daemon(host, rpc_port):
         return
     except (ConnectionRefusedError, socket.timeout):
         print("Starting Kernel Daemon...")
-        daemon_script_path = os.path.join('src', 'core', 'kerneld.py')
-        start_process_in_new_terminal(daemon_script_path, "daemon")
+        daemon_script_path = os.path.join('src', 'node', 'kerneld.py')
+        start_process_in_new_terminal(daemon_script_path, "deamon")
         time.sleep(5) 
 
 def shutdown_all(host, rpc_port):
