@@ -151,7 +151,6 @@ def main():
         host,
         p2p_port,
         new_block_event,
-        None,
         mempool_db,
         utxos_db,
         chain_manager,
