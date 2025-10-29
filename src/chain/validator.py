@@ -85,7 +85,7 @@ class Validator:
             
             parent_timestamp = parent_block['BlockHeader']['timestamp']
             
-            if block_header.timestamp <= parent_timestamp:
+            if block_header.timestamp < parent_timestamp: #Change for "<=" but need to change the initial genesis difficulty
                 print(f"Header validation failed: Block timestamp ({block_header.timestamp}) is not after parent timestamp ({parent_timestamp})")
                 return False
             # TODO: Replace paren_timestamp with a real Median Time Past, we keep this for now

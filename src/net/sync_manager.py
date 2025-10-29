@@ -249,30 +249,72 @@ class SyncManager:
     
     def handle_headers(self, conn, headers_msg):
         if not headers_msg.headers:
-            print("Finished headers synchronization")
+            print("Finished headers synchronization (peer sent empty list)")
             with self.sync_lock:
                 self.is_syncing = False
             return
 
+        print(f"Received {len(headers_msg.headers)} headers from peer")
+
         last_known_block = self.db.lastBlock()
-        prev_block_hash = last_known_block['BlockHeader']['blockHash']
+        if not last_known_block:
+            prev_block_hash = '00' * 32
+            from src.core.genesis import GENESIS_BLOCK_HASH
+            last_known_block_hash_from_db = self.db.get_main_chain_tip_hash()
+            if not last_known_block_hash_from_db:
+                prev_block_hash = GENESIS_BLOCK_HASH
+            else:
+                prev_block_hash = last_known_block_hash_from_db
+        else:
+            prev_block_hash = last_known_block['BlockHeader']['blockHash']
+
         
         headers_to_request = []
+        last_valid_header = None
         for header in headers_msg.headers:
             if header.prevBlockHash.hex() != prev_block_hash:
+                if not headers_to_request: 
+                    if header.prevBlockHash.hex() == self.db.get_main_chain_tip_hash():
+                         print(f"Header {header.generateBlockHash()[:10]}... connects to our last block")
+                         prev_block_hash = self.db.get_main_chain_tip_hash()
+                    else:
+                         print(f"Header validation failed: Discontinuity in chain")
+                         return
+                else:
+                    print(f"Header validation failed: Discontinuity in peer's batch")
+                    return
                 print("Header validation failed: Discontinuity in chain")
                 return
+            
             if not check_pow(header):
                 print("Header validation failed: Invalid Proof of Work")
                 return
             
             headers_to_request.append(header)
             prev_block_hash = header.generateBlockHash()
+            last_valid_header = header
 
         if headers_to_request:
             items_to_get = [(INV_TYPE_BLOCK, bytes.fromhex(h.generateBlockHash())) for h in headers_to_request]
             getdata_msg = GetData(items_to_get)
             self.send_message(conn, getdata_msg)
+
+        if len(headers_msg.headers) == MAX_HEADERS_TO_SEND:
+            if not last_valid_header:
+                print("Reached max headers but have no last valid header")
+                return
+            new_start_block_hash_hex = last_valid_header.generateBlockHash()
+            new_start_block_hash_bytes = bytes.fromhex(new_start_block_hash_hex)
+            
+            print(f"Received max headers ({MAX_HEADERS_TO_SEND}). Requesting next batch starting from {new_start_block_hash_hex[:10]}...")
+            
+            getheaders_msg = GetHeaders(start_block=new_start_block_hash_bytes)
+            self.send_message(conn, getheaders_msg)
+        
+        else:
+            print(f"Received {len(headers_msg.headers)} headers, sync is complete")
+            with self.sync_lock:
+                self.is_syncing = False
 
 
     def handle_inv(self, conn, inv_msg):
