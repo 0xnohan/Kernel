@@ -1,5 +1,6 @@
 import time
-
+import logging
+logger = logging.getLogger(__name__)
 from src.utils.serialization import merkle_root
 from src.core.transaction import Tx
 from src.utils.crypto_hash import hash256
@@ -31,23 +32,23 @@ class Validator:
                 for mempool_tx in self.mempool.values():
                     for mempool_tx_in in mempool_tx.tx_ins:
                         if mempool_tx_in.prev_tx == tx_in.prev_tx and mempool_tx_in.prev_index == tx_in.prev_index:
-                            print(f"Validation Error (tx: {tx_id}): Double spend attempt in mempool")
+                            logger.error(f"Validation Error (tx: {tx_id}): Double spend attempt in mempool")
                             return False
                         
             if prev_tx_hex not in self.utxos:
-                print(f"Validation Error (tx: {tx_id}): Previous tx {prev_tx_hex} not in UTXO set")
+                logger.error(f"Validation Error (tx: {tx_id}): Previous tx {prev_tx_hex} not in UTXO set")
                 return False
             
             prev_tx_obj = self.utxos.get(prev_tx_hex)
             if tx_in.prev_index >= len(prev_tx_obj.tx_outs):
-                print(f"Validation Error (tx: {tx_id}): Invalid output index for tx {prev_tx_hex}")
+                logger.error(f"Validation Error (tx: {tx_id}): Invalid output index for tx {prev_tx_hex}")
                 return False
             
             input_sum += prev_tx_obj.tx_outs[tx_in.prev_index].amount
 
         output_sum = sum(tx_out.amount for tx_out in tx.tx_outs)
         if output_sum > input_sum:
-            print(f"Validation Error (tx: {tx_id}): Output amount ({output_sum}) exceeds input amount ({input_sum})")
+            logger.error(f"Validation Error (tx: {tx_id}): Output amount ({output_sum}) exceeds input amount ({input_sum})")
             return False
 
         for i, tx_in in enumerate(tx.tx_ins):
@@ -56,49 +57,49 @@ class Validator:
             script_pubkey = output_to_spend.script_pubkey
             
             if not tx.verify_input(i, script_pubkey):
-                print(f"Validation Error (tx: {tx_id[:10]}...): Signature verification failed for input {i}.")
+                logger.error(f"Validation Error (tx: {tx_id[:10]}...): Signature verification failed for input {i}.")
                 return False
         return True
 
 
     def validate_block_header(self, block_header, db):
         if not check_pow(block_header):
-            print(f"Header validation failed: Invalid Proof of Work")
+            logger.error(f"Header validation failed: Invalid Proof of Work")
             return False
         
         prev_hash = block_header.prevBlockHash.hex()
         if prev_hash != '00' * 32 and not db.get_index(prev_hash):
-            print(f"Header validation failed: Previous hash {prev_hash[:10]}... is unknown.")
+            logger.error(f"Header validation failed: Previous hash {prev_hash[:10]}... is unknown")
             return False
         
         MAX_FUTURE_TIME_SECONDS = 2 * 60 * 60 
         current_node_time = int(time.time())
         if block_header.timestamp > (current_node_time + MAX_FUTURE_TIME_SECONDS):
-            print(f"Header validation failed: Block timestamp ({block_header.timestamp}) is too far in the future")
+            logger.error(f"Header validation failed: Block timestamp ({block_header.timestamp}) is too far in the future")
             return False
         
         if prev_hash != '00' * 32:
             parent_block = db.get_block(prev_hash)
             if not parent_block:
-                print(f"Header validation failed: Could not retrieve parent block {prev_hash[:10]} for timestamp check")
+                logger.error(f"Header validation failed: Could not retrieve parent block {prev_hash[:10]} for timestamp check")
                 return False
             
             parent_timestamp = parent_block['BlockHeader']['timestamp']
             
             if block_header.timestamp < parent_timestamp: #Change for "<=" but need to change the initial genesis difficulty
                 #INITIAL_TARGET = 0x000000FFFFFF000000000000000000000000000000000000000000000000 more difficult
-                print(f"Header validation failed: Block timestamp ({block_header.timestamp}) is not after parent timestamp ({parent_timestamp})")
+                logger.error(f"Header validation failed: Block timestamp ({block_header.timestamp}) is not after parent timestamp ({parent_timestamp})")
                 return False
             # TODO: Replace paren_timestamp with a real Median Time Past, we keep this for now
         return True
 
     def validate_block_body(self, block, db):
         if len(block.serialize()) > MAX_BLOCK_SIZE:
-            print(f"Block validation failed (Block {block.Height}): Block size exceeds {MAX_BLOCK_SIZE}")
+            logger.error(f"Block validation failed (Block {block.Height}): Block size exceeds {MAX_BLOCK_SIZE}")
             return False
 
         if not block.Txs or not block.Txs[0].is_coinbase():
-            print(f"Block validation failed (Block {block.Height}): First tx is not a coinbase")
+            logger.error(f"Block validation failed (Block {block.Height}): First tx is not a coinbase")
             return False
         
         try:
@@ -106,33 +107,33 @@ class Validator:
             coinbase_script_sig = coinbase_tx.tx_ins[0].script_sig
             
             if not coinbase_script_sig.cmds:
-                print(f"Block validation failed (Block {block.Height}): Coinbase scriptSig is empty")
+                logger.error(f"Block validation failed (Block {block.Height}): Coinbase scriptSig is empty")
                 return False
             
             height_bytes = coinbase_script_sig.cmds[0]
             if not isinstance(height_bytes, bytes):
-                print(f"Block validation failed (Block {block.Height}): Coinbase scriptSig first element is not data (height).")
+                logger.error(f"Block validation failed (Block {block.Height}): Coinbase scriptSig first element is not data (height).")
                 return False
             decoded_height = little_endian_to_int(height_bytes)
             
             if decoded_height != block.Height:
-                print(f"Block validation failed (Block {block.Height}): check failed. Block height is {block.Height}, but coinbase scriptSig starts with {decoded_height}")
+                logger.error(f"Block validation failed (Block {block.Height}): check failed. Block height is {block.Height}, but coinbase scriptSig starts with {decoded_height}")
                 return False
 
         except Exception as e:
-            print(f"Block validation failed (Block {block.Height}): Error during check: {e}")
+            logger.error(f"Block validation failed (Block {block.Height}): Error during check: {e}")
             return False
 
         for i, tx in enumerate(block.Txs[1:]):
             if tx.is_coinbase():
-                print(f"Block validation failed (Block {block.Height}): Found coinbase tx at index {i+1}")
+                logger.error(f"Block validation failed (Block {block.Height}): Found coinbase tx at index {i+1}")
                 return False
 
         tx_ids = [bytes.fromhex(tx.id()) for tx in block.Txs]
         calculated_merkle_root = merkle_root(tx_ids)[::-1]
         
         if calculated_merkle_root != block.BlockHeader.merkleRoot:
-            print(f"Block validation failed (Block {block.Height}): Merkle root mismatch")
+            logger.error(f"Block validation failed (Block {block.Height}): Merkle root mismatch")
             return False
 
         spent_utxos_in_block = set()
@@ -140,7 +141,7 @@ class Validator:
             for tx_in in tx.tx_ins:
                 utxo_id = f"{tx_in.prev_tx.hex()}_{tx_in.prev_index}"
                 if utxo_id in spent_utxos_in_block:
-                    print(f"Block validation failed (Block {block.Height}): Double spend inside the same block for UTXO {utxo_id}")
+                    logger.error(f"Block validation failed (Block {block.Height}): Double spend inside the same block for UTXO {utxo_id}")
                     return False
                 spent_utxos_in_block.add(utxo_id)
         
@@ -152,7 +153,7 @@ class Validator:
         
         for tx in block.Txs[1:]: 
             if not self.validate_transaction(tx, is_in_block=True):
-                print(f"Block connection failed: Invalid transaction {tx.id()}")
+                logger.error(f"Block connection failed: Invalid transaction {tx.id()}")
                 return False
         return True
     
@@ -168,12 +169,12 @@ class Validator:
             for tx_in in tx.tx_ins:
                 prev_tx_obj = self.utxos.get(tx_in.prev_tx.hex())
                 if not prev_tx_obj:
-                    print(f"Block validation failed (Block {block.Height}): Could not find prev_tx {tx_in.prev_tx.hex()} for fee calculation.")
+                    logger.error(f"Block validation failed (Block {block.Height}): Could not find prev_tx {tx_in.prev_tx.hex()} for fee calculation")
                     return False
                 try:
                     input_sum += prev_tx_obj.tx_outs[tx_in.prev_index].amount
                 except IndexError:
-                    print(f"Block validation failed (Block {block.Height}): Invalid index {tx_in.prev_index} for fee calculation.")
+                    logger.error(f"Block validation failed (Block {block.Height}): Invalid index {tx_in.prev_index} for fee calculation")
                     return False
             
             for tx_out in tx.tx_outs:
@@ -185,7 +186,7 @@ class Validator:
         expected_total_output = expected_reward + total_fees
         
         if total_coinbase_output > expected_total_output:
-            print(f"Block validation failed (Block {block.Height}): Coinbase reward too high. Got {total_coinbase_output}, expected {expected_total_output} (Reward: {expected_reward}, Fees: {total_fees})")
+            logger.error(f"Block validation failed (Block {block.Height}): Coinbase reward too high. Got {total_coinbase_output}, expected {expected_total_output} (Reward: {expected_reward}, Fees: {total_fees})")
             return False
             
         return True

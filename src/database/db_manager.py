@@ -1,4 +1,5 @@
-# src/database/db_manager.py
+import logging
+logger = logging.getLogger(__name__)
 
 import os
 import json
@@ -47,7 +48,7 @@ class BlockchainDB(BaseDB):
                 
             self.db.commit() 
         except Exception as e:
-            print(f"Error when writing to db: {e}")
+            logging.error(f"Error when writing to db: {e}")
             self.db.rollback()
     
     def write_block(self, block_dict):
@@ -59,7 +60,7 @@ class BlockchainDB(BaseDB):
             return True
 
         except Exception as e:
-            print(f"Error when writing block {block_hash} to db: {e}")
+            logging.error(f"Error when writing block {block_hash} to db: {e}")
             self.db.rollback()
             return False
 
@@ -86,7 +87,7 @@ class BlockchainDB(BaseDB):
             target = bits_to_target(bytes.fromhex(bits_hex))
             return (2**256) // (target + 1)
         except Exception as e:
-            print(f"Error calculating work: {e}. Defaulting to 0.")
+            logging.error(f"Error calculating work: {e}. Defaulting to 0")
             return 0
     
     def get_block(self, block_hash):
@@ -99,7 +100,7 @@ class BlockchainDB(BaseDB):
 
     def set_main_chain_tip(self, block_hash):
         self.index_db[self.MAIN_TIP_KEY] = block_hash
-        print(f"New main chain tip set to: {block_hash[:10]}...")
+        logging.debug(f"New main chain tip set to: {block_hash}")
 
     def get_main_chain_tip_hash(self):
         return self.index_db.get(self.MAIN_TIP_KEY)
@@ -118,7 +119,7 @@ class BlockchainDB(BaseDB):
                 self.set_main_chain_tip(last_hash)
             return True
         except Exception as e:
-            print(f"Error when updating db: {e}")
+            logging.error(f"Error when updating db: {e}")
             self.db.rollback()
             return False
 
@@ -274,7 +275,7 @@ class AccountDB:
     def save_wallet(self, wallet_name, wallet_data):
         filepath = os.path.join(self.wallets_dir, f"{wallet_name}.json")
         if os.path.exists(filepath):
-            print(f"Wallet with name '{wallet_name}' already exists")
+            logging.error(f"Wallet with name '{wallet_name}' already exists")
             return False
         with open(filepath, "w") as file:
             json.dump(wallet_data, file, indent=4)

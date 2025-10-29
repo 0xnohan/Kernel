@@ -1,6 +1,7 @@
 from src.utils.serialization import int_to_little_endian, encode_varint, little_endian_to_int, read_varint
 from src.scripts.opcodes import OP_CODE_FUNCTION
-
+import logging
+logger = logging.getLogger(__name__)
 
 class Script:
     def __init__(self, cmds=None):
@@ -79,11 +80,11 @@ class Script:
 
                 if cmd == 172:
                     if not operation(stack, z):
-                        print(f"Error in Signature Verification")
+                        logging.error(f"Error in Signature Verification")
                         return False
 
                 elif not operation(stack):
-                    print(f"Error in Signature Verification")
+                    logging.error(f"Error in Signature Verification")
                     return False
             else:
                 stack.append(cmd)

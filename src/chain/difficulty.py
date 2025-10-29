@@ -1,8 +1,10 @@
+import logging
 from src.database.db_manager import BlockchainDB
 from src.utils.serialization import target_to_bits, bits_to_target
 from src.chain.params import MAX_TARGET, RESET_DIFFICULTY_AFTER_BLOCKS, AVERAGE_MINE_TIME
 from src.core.genesis import GENESIS_BITS
 
+logger = logging.getLogger(__name__)
 
 def get_ancestor_at_height(db, tip_hash, target_height):
     current_hash = tip_hash
@@ -55,6 +57,6 @@ def calculate_new_bits(current_height):
     new_target = min(new_target, MAX_TARGET)
     new_bits = target_to_bits(new_target)
     
-    print(f"DIFFICULTY: Readjusted at height {current_height}. Time diff: {time_diff}s (Target: {target_time}s). New bits: {new_bits.hex()}")
+    logger.debug(f"Difficulty readjusted at height {current_height}. Time diff: {time_diff}s (Target: {target_time}s). New bits: {new_bits.hex()}")
     
     return new_bits

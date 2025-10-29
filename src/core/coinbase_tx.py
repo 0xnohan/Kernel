@@ -1,5 +1,7 @@
 import json
 import os
+import logging
+logger = logging.getLogger(__name__)
 
 from src.core.transaction import Tx, TxIn, TxOut
 from src.scripts.script import Script
@@ -19,7 +21,7 @@ def load_miner_info():
             wallet_data = json.load(f)
         return str(wallet_data['privateKey']), wallet_data['PublicAddress']
     except (FileNotFoundError, KeyError) as e:
-        print(f"Could not load miner wallet '{wallet_name}', please check config.ini and wallet files")
+        logger.error(f"Could not load miner wallet '{wallet_name}', please check config.ini and wallet files")
         return None, None
     
 class CoinbaseTx:
@@ -34,7 +36,7 @@ class CoinbaseTx:
 
     def CoinbaseTransaction(self, fees):
         if not self.minerAddress:
-            print("Miner address not loaded, cannot create coinbase transaction.")
+            logger.critical("Miner address not loaded, cannot create coinbase transaction")
             return None
         tx_ins = [TxIn(
             prev_tx=b"\0" * 32, 

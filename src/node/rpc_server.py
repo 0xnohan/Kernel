@@ -1,6 +1,8 @@
 import json
 import socketserver
 from io import BytesIO
+import logging
+logger = logging.getLogger(__name__)
 
 from src.wallet.wallet import wallet
 from src.wallet.send import Send
@@ -180,7 +182,7 @@ class TCPRequestHandler(socketserver.BaseRequestHandler):
 
             self.request.sendall(json.dumps(response).encode('utf-8'))
         except Exception as e:
-            print(f"Erreur dans le gestionnaire de requêtes RPC: {e}")
+            logger.error(f"Error in RPC request: {e}")
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
@@ -199,7 +201,7 @@ def rpcServer(host, rpcPort, utxos, mempool, mining_process_manager, new_tx_queu
     }
     
     server = ThreadedTCPServer((host, rpcPort), TCPRequestHandler)
-    print(f"RPC server started, listening on port {rpcPort}")
+    logger.debug(f"RPC server started, listening on port {rpcPort}")
     
     try:
         server.serve_forever()

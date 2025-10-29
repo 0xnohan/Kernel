@@ -63,7 +63,6 @@ def op_checksig(stack, z):
         raw_sig_obj = pub_key_obj.ecdsa_deserialize(der_signature)
         verified = pub_key_obj.ecdsa_verify(z_bytes, raw_sig_obj)
     except Exception as e:
-        print(f"Error signature verification : {e}")
         verified = False
     
     if verified:

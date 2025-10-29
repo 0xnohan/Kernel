@@ -1,5 +1,7 @@
 import configparser
 import os
+import logging
+logger = logging.getLogger(__name__)
 
 CONFIG_PATH = os.path.join(os.getcwd(), 'data', 'config.ini')
 
@@ -19,22 +21,22 @@ def _create_default_config():
     try:
         with open(CONFIG_PATH, 'w') as configfile:
             config.write(configfile)
-        print(f"Default config file created at {CONFIG_PATH}")
+        logger.debug(f"Default config file created at {CONFIG_PATH}")
     except IOError as e:
-        print(f"FATAL ERROR: Could not write default config file: {e}")
+        logger.critical(f"Could not write default config file: {e}")
         
     return config
 
 def load_config():
     if not os.path.exists(CONFIG_PATH):
-        print("config.ini not found, creating default configuration...")
+        logger.debug("config.ini not found, creating default configuration...")
         return _create_default_config()
         
     config = configparser.ConfigParser()
     config.read(CONFIG_PATH)
 
     if 'MINING' not in config or 'wallet' not in config['MINING']:
-        print("WARNING: 'MINING' section or 'wallet' key missing in config.ini, please create and add a wallet")
+        logger.warning("WARNING: 'MINING' section or 'wallet' key missing in config.ini, please create and add a wallet")
          
     return config
 

@@ -4,6 +4,7 @@ import os
 from queue import Queue
 from threading import Thread, Event
 import time
+import logging
 
 sys.path.append(os.getcwd())
 
@@ -17,26 +18,28 @@ from src.database.db_manager import BlockchainDB, UTXODB, MempoolDB, TxIndexDB
 from src.chain.chain_manager import ChainManager
 from src.core.block import Block
 from src.chain.validator import Validator
+from src.utils.logging_config import setup_logging
 
+logger = logging.getLogger(__name__)
 
 def handle_incoming_blocks(incoming_blocks_queue, chain_manager, broadcast_queue):
-    print("Block processing worker started")
+    logger.debug("Block processing worker started")
     while True:
         try:
             block_obj = incoming_blocks_queue.get()
             if not block_obj:
                 continue
 
-            print(f"Processing block {block_obj.Height} from queue...")
+            logger.debug(f"Processing block {block_obj.Height} from queue...")
             
             if chain_manager.process_new_block(block_obj):
-                print(f"Block {block_obj.Height} accepted, adding to broadcast queue")
+                logger.debug(f"Block {block_obj.Height} accepted, adding to broadcast queue")
                 broadcast_queue.put(block_obj)
             else:
-                print(f"Block {block_obj.Height} rejected by ChainManager")
+                logger.warning(f"Block {block_obj.Height} rejected by ChainManager")
                 
         except Exception as e:
-            print(f"FATAL ERROR in block processing worker: {e}")
+            logger.error(f"Error in block processing worker: {e}")
 
 def handle_broadcasts(broadcast_queue, sync_manager, new_block_event):
     while True:
@@ -58,10 +61,11 @@ def handle_new_transactions(new_tx_queue, sync_manager, chain_manager):
                 sync_manager.broadcast_tx(tx)
             
         except Exception as e:
-            print(f"Error in thread {e}")
+            logger.error(f"Error in thread {e}")
 
 
 def main():
+    setup_logging()
     config = load_config()
     
     host = config['NETWORK']['host']
@@ -75,25 +79,25 @@ def main():
     incoming_blocks_queue = Queue()
     new_block_event = Event()
     
-    print("Initializing databases...")
+    logger.debug("Initializing databases...")
     db = BlockchainDB()
     utxos_db = UTXODB()
     mempool_db = MempoolDB()
     txindex_db = TxIndexDB()
 
     mempool_db.clear()
-    print("Persistent mempool cleared")
+    logger.debug("Persistent mempool cleared")
 
     chain_manager = ChainManager(db, utxos_db, mempool_db, txindex_db, new_block_event)
     utxo_manager = UTXOManager(utxos_db)
 
     if not db.get_main_chain_tip_hash():
-        print("No main chain tip found. Checking for Genesis block...")
+        logger.debug("No main chain tip found. Checking for Genesis block...")
         genesis = create_genesis_block()
         genesis_hash = genesis.BlockHeader.generateBlockHash()
         
         if not db.get_block(genesis_hash):
-            print("No Genesis block found. Creating and writing Genesis block...")
+            logger.debug("No Genesis block found. Creating and writing Genesis block...")
             genesis.BlockHeader.to_hex()
             tx_json_list = [tx.to_dict() for tx in genesis.Txs]
             block_to_save = {
@@ -103,40 +107,40 @@ def main():
             }
             db.write_block(block_to_save)
         else:
-            print("Genesis block found in DB.")
+            logger.debug("Genesis block found in DB")
 
-        print("Connecting Genesis block to UTXO set and TxIndex...")
+        logger.debug("Connecting Genesis block to UTXO set and TxIndex...")
         chain_manager.connect_block(genesis) 
         db.set_main_chain_tip(genesis_hash)
         utxos_db.set_meta('last_block_hash', genesis_hash)
         utxos_db.commit()
-        print("Genesis block processed.")
+        logger.debug("Genesis block processed")
     
     last_hash_chain = db.get_main_chain_tip_hash()
     last_hash_utxo_db = utxos_db.get_meta('last_block_hash')
     
     if last_hash_chain == last_hash_utxo_db:
-        print(f"UTXO set is in sync with main chain tip: {last_hash_chain[:10]}...")
-        print(f"Loaded {len(utxos_db)} UTXOs.")
+        logger.debug(f"UTXO set is in sync with main chain tip: {last_hash_chain}")
+        logger.debug(f"Loaded {len(utxos_db)} UTXOs")
     else:
-        print(f"UTXO set is out of sync. Rebuilding... This may take a while.")
-        print("Clearing TxIndex for rebuild...")
+        logger.info(f"UTXO set is out of sync. Rebuilding... This may take a while...")
+        logger.debug("Clearing TxIndex for rebuild...")
         txindex_db.clear()
         
-        print("Rebuilding UTXO set...")
+        logger.debug("Rebuilding UTXO set...")
         utxo_manager.build_utxos_from_db() 
         
-        print("Rebuilding TxIndex...")
+        logger.debug("Rebuilding TxIndex...")
         all_blocks = db.read() 
         for block_dict in all_blocks:
             block_hash = block_dict['BlockHeader']['blockHash']
             for tx in block_dict['Txs']:
                 txindex_db[tx['TxId']] = block_hash
-        print("TxIndex rebuilt.")
+        logger.debug("TxIndex rebuilt")
 
         utxos_db.set_meta('last_block_hash', last_hash_chain)
         utxos_db.commit()
-        print(f"UTXO set rebuilt. {len(utxos_db)} UTXOs found")
+        logger.info(f"UTXO set rebuilt. {len(utxos_db)} UTXOs found")
 
     sync_manager = SyncManager(host, p2p_port, new_block_event, None, mempool_db, utxos_db, chain_manager, incoming_blocks_queue)
 
@@ -144,13 +148,12 @@ def main():
     p2p_server_thread = Thread(target=sync_manager.spin_up_the_server)
     p2p_server_thread.daemon = True 
     p2p_server_thread.start()
-    print(f"P2P server started on port {p2p_port}")
     
     # API Thread 
     api_thread = Thread(target=web_main, args=(utxos_db, mempool_db, api_port, p2p_port))
     api_thread.daemon = True
     api_thread.start()
-    print(f"API server started on port {api_port}")
+    logger.info(f"API server started on port {api_port}")
     
     # RPC Thread 
     rpc_thread = Thread(target=rpcServer, args=(
@@ -180,20 +183,20 @@ def main():
     
     config = load_config()
     if 'SEED_NODES' in config:
-        print("Connecting to seed nodes...")
+        logger.info("Connecting to seed nodes...")
         for key, address in config['SEED_NODES'].items():
             try:
                 peer_host, peer_port_str = address.split(':')
                 peer_port = int(peer_port_str)
                 sync_manager.connect_to_peer(peer_host, peer_port)
             except Exception as e:
-                print(f"Invalid seed node address format or connection failed: {address} ({e})")
+                logger.warning(f"Invalid seed node address format or connection failed: {address} ({e})")
     
     try:
         while not mining_process_manager.get('shutdown_requested', False):
             time.sleep(2)
 
     except KeyboardInterrupt:
-        print("\nShutting down daemon...")
+        logger.info("\nShutting down daemon...")
 if __name__ == "__main__":
     main()

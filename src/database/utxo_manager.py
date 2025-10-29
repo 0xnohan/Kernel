@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 from src.database.db_manager import BlockchainDB
 from src.core.transaction import Tx
 
@@ -31,7 +33,7 @@ class UTXOManager:
                         self.utxos[tx_id] = Tx.to_obj(tx_data)
                     
 
-        print(f"UTXO set rebuilt. Found {len(self.utxos)} unspent transactions.")
+        logging.debug(f"UTXO set rebuilt. Found {len(self.utxos)} unspent transactions")
 
 
     def add_new_utxos(self, transactions):
@@ -52,4 +54,4 @@ class UTXOManager:
                    
                     del self.utxos[tx_id_hex]
                 else:
-                    print(f"Warning: Output index {output_index} out of range for Tx {tx_id_hex}.")
+                    logging.warning(f"Output index {output_index} out of range for Tx {tx_id_hex}.")

@@ -7,6 +7,8 @@ import time
 import sys
 from src.utils.config_loader import load_config, update_config, get_config_dict
 from src.chain.params import FEE_RATE_FAST, FEE_RATE_NORMAL, FEE_RATE_SLOW
+import logging
+logger = logging.getLogger(__name__)
 
 running_processes = {
     "daemon": None,
@@ -38,37 +40,37 @@ def start_process_in_new_terminal(script_path, process_key):
     elif sys.platform.startswith('linux'):
         process = subprocess.Popen(['gnome-terminal', '--', sys.executable, script_path], cwd=current_dir)
     else:
-        print(f"Unsupported OS: {sys.platform}, please start {script_path} manually.")
+        logger.error(f"Unsupported OS: {sys.platform}, please start {script_path} manually.")
         return
         
     running_processes[process_key] = process
-    print(f"Started {process_key} in a new terminal")
+    logger.info(f"Started {process_key} in a new terminal")
 
 def start_daemon(host, rpc_port):
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(1)
             s.connect((host, rpc_port))
-        print("Kernel Daemon is already running")
+        logger.warning("Kernel Daemon is already running")
         return
     except (ConnectionRefusedError, socket.timeout):
-        print("Starting Kernel Daemon...")
+        logger.info("Starting Kernel Daemon...")
         daemon_script_path = os.path.join('src', 'node', 'kerneld.py')
         start_process_in_new_terminal(daemon_script_path, "deamon")
         time.sleep(5) 
 
 def shutdown_all(host, rpc_port):
-    print("\nStopping all processes...")
+    logger.info("\nStopping all processes...")
     
     miner_process = running_processes.get("miner")
     if miner_process and miner_process.poll() is None:
-        print("Stopping miner process...")
+        logger.debug("Stopping miner process...")
         miner_process.terminate()
         running_processes["miner"] = None
 
-    print("Sending shutdown command to daemon...")
+    logger.debug("Sending shutdown command to daemon...")
     SendRpcCommand(host, rpc_port, {"command": "shutdown"})
-    print("\nAll processes have been stopped")
+    logger.info("\nAll processes have been stopped")
 
 def SendRpcCommand(host, rpc_port, command):
     try:
@@ -145,7 +147,7 @@ def settings(host, rpc_port):
         else:
             response = {"message": "Invalid choice."}
         
-        print(f"\n[DAEMON] -> {response.get('message', 'No message')}")
+        logger.info(f"\n[DAEMON] -> {response.get('message', 'No message')}")
         input("\nPress Enter to continue...")
 
 # Main CLI loop
@@ -172,7 +174,7 @@ def main():
 
         response = {}
         if choice == '1':
-            print("Starting KernelX miner process...")
+            logger.info("Starting KernelX miner process...")
             miner_script_path = os.path.join('KernelX', 'main.py')
             if os.path.exists(miner_script_path):
                 start_process_in_new_terminal(miner_script_path, "miner")
@@ -183,7 +185,7 @@ def main():
         elif choice == '2':
             miner_process = running_processes.get("miner")
             if miner_process and miner_process.poll() is None:
-                print("Stopping miner process...")
+                logger.info("Stopping miner process...")
                 miner_process.terminate()
                 running_processes["miner"] = None
                 response = {"message": "Miner process stopped"}
@@ -252,10 +254,9 @@ def main():
             response = {"message": "Invalid choice. Please try again..."}
 
         if response:
-            print(f"\n[DAEMON] -> {response.get('message', 'No message')}")
+            logger.info(f"\n[DAEMON] -> {response.get('message', 'No message')}")
 
         input("\nPress Enter to continue...")
     
-
 if __name__ == "__main__":
     main()

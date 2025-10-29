@@ -1,10 +1,13 @@
 from threading import RLock
+import logging
 
 from src.core.transaction import Tx
 from src.database.utxo_manager import UTXOManager
 from src.chain.mempool import Mempool
 from src.chain.validator import Validator
 from src.core.block import Block
+
+logger = logging.getLogger(__name__)
 
 class ChainManager:
     def __init__(self, blockchain_db, utxo_db, mempool_db, txindex_db, new_block_event):
@@ -24,38 +27,38 @@ class ChainManager:
         tx_id = tx.id()
         with self.mempool_lock:
             if tx_id in self.mempool:
-                print(f"Tx {tx_id[:10]}... already in mempool, rejected...")
+                logger.warning(f"Tx {tx_id} already in mempool, rejected...")
                 return False
 
             if not self.validator.validate_transaction(tx, is_in_block=False):
-                print(f"Tx {tx_id[:10]}... validation failed, rejected...")
+                logger.warning(f"Tx {tx_id} validation failed, rejected...")
                 return False
             
-            print(f"Tx {tx_id[:10]}... accepted in mempool")
+            logger.info(f"Tx {tx_id} added in mempool")
             self.mempool[tx_id] = tx
             return True
 
     def process_new_block(self, block_obj):
         block_hash = block_obj.BlockHeader.generateBlockHash()
         if self.db.get_block(block_hash):
-            print(f"Block {block_hash[:10]}... already known. Discarding.")
+            logger.debug(f"Block {block_hash} already known. Discarding...")
             return False
 
         if not self.validator.validate_block_header(block_obj.BlockHeader, self.db):
-            print(f"Block {block_hash[:10]}... failed header validation. Discarding.")
+            logger.warning(f"Block {block_hash} failed header validation. Discarding...")
             return False
 
         if not self.validator.validate_block_body(block_obj, self.db):
-            print(f"Block {block_hash[:10]}... failed body validation. Discarding.")
+            logger.warning(f"Block {block_hash} failed body validation. Discarding...")
             return False
         
         block_dict = self.block_to_dict(block_obj)
         self.db.write_block(block_dict) 
         
-        print(f"Received valid new block {block_obj.Height} ({block_hash[:10]}...).")
+        logger.info(f"Accepted new block: {block_obj.Height} (hash: {block_hash[:10]}...)")
         main_tip_hash = self.db.get_main_chain_tip_hash()
         if not main_tip_hash: 
-            print("Processing Genesis block.")
+            logger.debug("Processing Genesis block")
             self.connect_block(block_obj) 
             self.db.set_main_chain_tip(block_hash)
             return True
@@ -64,10 +67,10 @@ class ChainManager:
         new_block_index = self.db.get_index(block_hash)
 
         if new_block_index['total_work'] > main_tip_index['total_work']:
-            print(f"New block {block_hash[:10]}... has more work. Reorganizing chain.")
+            logger.info(f"New block {block_hash} has more work. Reorganizing chain...")
             self.reorganize_chain(block_hash)
         else:
-            print(f"New block {block_hash[:10]}... is on a fork with less work. Storing.")
+            logger.info(f"New block {block_hash} is on a fork with less work. Storing...")
 
         return True
 
@@ -97,18 +100,18 @@ class ChainManager:
                 curr_old_hash = old_idx['prev_hash']
         
         common_ancestor_hash = curr_new_hash
-        print(f"Common ancestor is {common_ancestor_hash[:10]}...")
+        logger.debug(f"Common ancestor is {common_ancestor_hash}")
 
         for block_hash in old_chain:
-            print(f"Disconnecting block {block_hash[:10]}...")
+            logger.debug(f"Disconnecting block {block_hash}")
             block = Block.to_obj(self.db.get_block(block_hash))
             self.disconnect_block(block)
 
         for block_hash in reversed(new_chain):
-            print(f"Connecting block {block_hash[:10]}...")
+            logger.debug(f"Connecting block {block_hash}")
             block = Block.to_obj(self.db.get_block(block_hash))
             if not self.connect_block(block):
-                print(f"FATAL: Failed to connect block {block_hash} during reorg. Chain state may be corrupt.")
+                logger.error(f"Failed to connect block {block_hash} during reorg. Chain state may be corrupt")
                 return
 
         self.db.set_main_chain_tip(new_tip_hash)
@@ -119,7 +122,7 @@ class ChainManager:
 
     def connect_block(self, block_obj):
         if not self.validator.validate_block_transactions(block_obj, is_in_block=True):
-            print(f"Block {block_obj.Height} failed context-full tx validation. Aborting connect.")
+            logger.warning(f"Block {block_obj.Height} failed context-full tx validation. Aborting connect")
             return False
         
         block_hash = block_obj.BlockHeader.generateBlockHash()
@@ -137,7 +140,7 @@ class ChainManager:
         
         self.mempool_manager.remove_transactions(tx_ids_in_block)
         
-        print(f"Connected block {block_obj.Height}. UTXOs and mempool updated.")
+        logger.debug(f"Connected block {block_obj.Height}. UTXOs and mempool updated")
         return True
 
     def disconnect_block(self, block_obj):
@@ -159,8 +162,7 @@ class ChainManager:
                 prev_tx_block_dict = self.find_tx_block_in_chain(prev_tx_hash)
 
                 if not prev_tx_block_dict:
-                    print(f"Corruption detected, txindex doesn't find {prev_tx_hash}")
-                    raise Exception(f"WARN: Could not find parent tx {prev_tx_hash[:10]}... during disconnect.")
+                    logger.warning(f"Corruption detected, txindex doesn't find {prev_tx_hash}")
                 
                 found_parent_tx = False
 
@@ -171,8 +173,7 @@ class ChainManager:
                         break
 
                 if not found_parent_tx:
-                    print(f"Corruption detected, block {prev_tx_block_dict['Height']} found but doesn't have tx {prev_tx_hash}")
-                    raise Exception(f"Corruption of index: tx {prev_tx_hash} not find in this block")
+                    logger.warning(f"Corruption detected, block {prev_tx_block_dict['Height']} found but doesn't have tx {prev_tx_hash}")
 
         for tx in block_obj.Txs[1:]:
             tx_id = tx.id()
@@ -183,20 +184,20 @@ class ChainManager:
                     if self.validator.validate_transaction(tx):
                         self.mempool[tx_id] = tx
                     else:
-                        print(f"Orphaned tx {tx_id[:10]}... is no longer valid. Discarding.")
+                        logger.debug(f"Orphaned tx {tx_id} is no longer valid. Discarding...")
                     
-        print(f"Disconnected block {block_obj.Height}. UTXOs restored, txs returned to mempool.")
+        logger.debug(f"Disconnected block {block_obj.Height}. UTXOs restored, txs returned to mempool")
         return True
 
     def find_tx_block_in_chain(self, tx_id):
         block_hash = self.txindex.get(tx_id)
         if not block_hash:
-            print(f"WARN: Transaction {tx_id[:10]}... not found in txindex")
+            logger.warning(f"Transaction {tx_id} not found in txindexDB")
             return None
         
         block = self.db.get_block(block_hash)
         if not block:
-            print(f"FATAL: txindex points to block {block_hash} for tx {tx_id}, but block is not in DB")
+            logger.error(f"txindex points to block {block_hash} for tx {tx_id}, but block is not in DB")
             return None
         
         return block

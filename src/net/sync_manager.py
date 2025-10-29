@@ -17,6 +17,8 @@ from src.net.messages import (
     Tx, Block, Ping, Pong,
     INV_TYPE_TX, INV_TYPE_BLOCK
 )
+import logging
+logger = logging.getLogger(__name__)
 
 
 class SyncManager:
@@ -72,7 +74,7 @@ class SyncManager:
             handler_thread.start()
 
         except Exception as e:
-            print(f"Failed to connect to peer {peer_id}. Error: {e}")
+            logger.error(f"Failed to connect to peer {peer_id}. Error: {e}")
 
     def start_ping_thread(self):
         def ping_peers():
@@ -85,7 +87,7 @@ class SyncManager:
                                 self.send_message(conn, ping_msg)
                                 self.last_ping_sent[peer_id] = time.time()
                             except Exception as e:
-                                print(f"Failed to send ping to {peer_id}: {e}")
+                                logger.error(f"Failed to send ping to {peer_id}: {e}")
                 time.sleep(PING_INTERVAL)
 
         ping_thread = Thread(target=ping_peers)
@@ -95,7 +97,7 @@ class SyncManager:
     def spin_up_the_server(self):
         self.server = Node(self.host, self.port)
         self.server.startServer()
-        print(f"[LISTENING] at {self.host}:{self.port}")
+        logger.info(f"[LISTENING] at {self.host}:{self.port}")
 
         self.start_ping_thread()
 
@@ -108,7 +110,7 @@ class SyncManager:
 
     def handle_connection(self, conn, addr):
         peer_id_str = f"{addr[0]}:{addr[1]}"
-        print(f"Handling new connection from {peer_id_str}")
+        logger.info(f"Handling new connection from {peer_id_str}")
         
         with self.peers_lock:
             self.peers[peer_id_str] = conn
@@ -123,7 +125,7 @@ class SyncManager:
                     
                     if command == Version.command.decode():
                         peer_version = Version.parse(envelope.stream())
-                        print(f"Peer {peer_id_str} version: {peer_version.version}, height: {peer_version.start_height}")
+                        logger.debug(f"Peer {peer_id_str} version: {peer_version.version}, height: {peer_version.start_height}")
                         if self.peer_handshake_status.get(peer_id_str) is None:
                             last_block = self.db.lastBlock()
                             start_height = last_block['Height'] if last_block else 0
@@ -136,7 +138,7 @@ class SyncManager:
                     elif command == VerAck.command.decode():
                         if peer_id_str in self.peer_handshake_status and self.peer_handshake_status[peer_id_str]['version_received']:
                             self.peer_handshake_status[peer_id_str]['verack_received'] = True
-                            print(f"Handshake complete with {peer_id_str}. Connection established.")
+                            logger.debug(f"Handshake complete with {peer_id_str}. Connection established.")
                             self.start_sync(conn)
 
                     elif command == GetHeaders.command.decode():
@@ -187,13 +189,13 @@ class SyncManager:
                         #print(f"Received pong from {peer_id_str} with nonce {pong_msg.nonce}")
 
                 except (RuntimeError, ValueError, IndexError) as e:
-                    print(f"Error message from {peer_id_str}: {e}. Discarding message and continuing")
+                    logger.error(f"Error message from {peer_id_str}: {e}. Discarding message and continuing")
                     continue
 
         except (IOError, ConnectionResetError, socket.timeout) as e:
-            print(f"Connection lost with peer {peer_id_str}. Reason: {e}")
+            logger.warning(f"Connection lost with peer {peer_id_str}. Reason: {e}")
         except Exception as e:
-            print(f"An error occurred with peer {peer_id_str}. Error: {e}")
+            logger.error(f"An error occurred with peer {peer_id_str}. Error: {e}")
         finally:
             self.cleanup_peer_connection(peer_id_str, conn)
 
@@ -204,7 +206,7 @@ class SyncManager:
                 return
             self.is_syncing = True
         
-        print("Starting blockchain synchronization...")
+        logger.debug("Starting blockchain synchronization...")
         last_block = self.db.lastBlock()
         
         if not last_block:
@@ -218,7 +220,7 @@ class SyncManager:
 
 
     def handle_getheaders(self, conn, getheaders_msg):
-        print(f"Received getheaders request starting from {getheaders_msg.start_block.hex()}")
+        logger.debug(f"Received getheaders request starting from {getheaders_msg.start_block.hex()}")
         all_blocks = self.db.read()
         headers_to_send = []
         found_start = False
@@ -241,7 +243,7 @@ class SyncManager:
                     break
         
         if headers_to_send:
-            print(f"Sending {len(headers_to_send)} headers to peer")
+            logger.info(f"Sending {len(headers_to_send)} headers to peer")
             headers_msg = Headers(headers_to_send)
             self.send_message(conn, headers_msg)
 
@@ -249,12 +251,12 @@ class SyncManager:
     
     def handle_headers(self, conn, headers_msg):
         if not headers_msg.headers:
-            print("Finished headers synchronization (peer sent empty list)")
+            logger.info("Finished headers synchronization (peer sent empty list)")
             with self.sync_lock:
                 self.is_syncing = False
             return
 
-        print(f"Received {len(headers_msg.headers)} headers from peer")
+        logger.debug(f"Received {len(headers_msg.headers)} headers from peer")
 
         last_known_block = self.db.lastBlock()
         if not last_known_block:
@@ -275,19 +277,19 @@ class SyncManager:
             if header.prevBlockHash.hex() != prev_block_hash:
                 if not headers_to_request: 
                     if header.prevBlockHash.hex() == self.db.get_main_chain_tip_hash():
-                         print(f"Header {header.generateBlockHash()[:10]}... connects to our last block")
-                         prev_block_hash = self.db.get_main_chain_tip_hash()
+                        logger.debug(f"Header {header.generateBlockHash()} connects to our last block")
+                        prev_block_hash = self.db.get_main_chain_tip_hash()
                     else:
-                         print(f"Header validation failed: Discontinuity in chain")
-                         return
+                        logger.error(f"Header validation failed: Discontinuity in chain")
+                        return
                 else:
-                    print(f"Header validation failed: Discontinuity in peer's batch")
+                    logger.error(f"Header validation failed: Discontinuity in peer's batch")
                     return
-                print("Header validation failed: Discontinuity in chain")
+                logger.error("Header validation failed: Discontinuity in chain")
                 return
             
             if not check_pow(header):
-                print("Header validation failed: Invalid Proof of Work")
+                logger.error("Header validation failed: Invalid Proof of Work")
                 return
             
             headers_to_request.append(header)
@@ -301,18 +303,18 @@ class SyncManager:
 
         if len(headers_msg.headers) == MAX_HEADERS_TO_SEND:
             if not last_valid_header:
-                print("Reached max headers but have no last valid header")
+                logger.debug("Reached max headers but have no last valid header")
                 return
             new_start_block_hash_hex = last_valid_header.generateBlockHash()
             new_start_block_hash_bytes = bytes.fromhex(new_start_block_hash_hex)
             
-            print(f"Received max headers ({MAX_HEADERS_TO_SEND}). Requesting next batch starting from {new_start_block_hash_hex[:10]}...")
+            logger.debug(f"Received max headers ({MAX_HEADERS_TO_SEND}). Requesting next batch starting from {new_start_block_hash_hex}")
             
             getheaders_msg = GetHeaders(start_block=new_start_block_hash_bytes)
             self.send_message(conn, getheaders_msg)
         
         else:
-            print(f"Received {len(headers_msg.headers)} headers, sync is complete")
+            logger.info(f"Received {len(headers_msg.headers)} headers, sync is complete")
             with self.sync_lock:
                 self.is_syncing = False
 
@@ -351,26 +353,26 @@ class SyncManager:
     def handle_tx(self, tx_obj, origin_peer_socket=None):
         tx_id = tx_obj.id()
         if not self.chain_manager:
-            print(f"ChainManager is not initialised. Tx {tx_id[:10]}... rejected...")
+            logger.warning(f"ChainManager is not initialised. Tx {tx_id} rejected...")
             return
         try:
             tx_was_added = self.chain_manager.add_transaction_to_mempool(tx_obj)
             if tx_was_added:
-                print(f"Tx {tx_id[:10]}... added, broadcasting...")
+                logger.info(f"Tx {tx_id} added, broadcasting...")
                 self.broadcast_tx(tx_obj, origin_peer_socket)
      
         except Exception as e:
-            print(f"Error with tx {tx_id[:10]}...: {e}")
+            logger.error(f"Error with tx {tx_id}: {e}")
 
 
     def handle_block(self, block_obj, origin_peer_socket=None):
         block_hash = block_obj.BlockHeader.generateBlockHash()
-        print(f"Received block {block_obj.Height} ({block_hash[:10]}...). Adding to processing queue")
+        logger.info(f"Received block {block_obj.Height} ({block_hash})")
         
         if self.incoming_blocks_queue is not None:
             self.incoming_blocks_queue.put(block_obj)
         else:
-            print("WARN: incoming_blocks_queue not initialized in SyncManager. Block discarded")
+            logger.warning("Incoming_blocks_queue not initialized in SyncManager. Block discarded")
 
     def cleanup_peer_connection(self, peer_id, conn):
         if conn:
@@ -380,7 +382,7 @@ class SyncManager:
                 del self.peers[peer_id]
         if peer_id in self.peer_handshake_status:
             del self.peer_handshake_status[peer_id]
-        print(f"Connection with {peer_id} closed and cleaned up")
+        logger.info(f"Connection with {peer_id} closed and cleaned up")
 
     def broadcast_inv(self, inv_msg, origin_peer_socket=None):
         with self.peers_lock:
@@ -395,11 +397,11 @@ class SyncManager:
     def broadcast_tx(self, tx_obj, origin_peer_socket=None):
         tx_hash = bytes.fromhex(tx_obj.id())
         inv_msg = Inv(items=[(INV_TYPE_TX, tx_hash)])
-        print(f"Broadcasting transaction {tx_obj.id()[:10]}...")
+        logger.info(f"Broadcasting transaction {tx_obj.id()}")
         self.broadcast_inv(inv_msg, origin_peer_socket)
 
     def broadcast_block(self, block_obj, origin_peer_socket=None):
         block_hash = bytes.fromhex(block_obj.BlockHeader.generateBlockHash())
         inv_msg = Inv(items=[(INV_TYPE_BLOCK, block_hash)])
-        print(f"Broadcasting block {block_obj.Height}...")
+        logger.info(f"Broadcasting block {block_obj.Height}")
         self.broadcast_inv(inv_msg, origin_peer_socket)
