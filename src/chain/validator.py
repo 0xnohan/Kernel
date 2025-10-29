@@ -1,3 +1,5 @@
+import time
+
 from src.utils.serialization import merkle_root
 from src.core.transaction import Tx
 from src.utils.crypto_hash import hash256
@@ -68,8 +70,25 @@ class Validator:
         if prev_hash != '00' * 32 and not db.get_index(prev_hash):
             print(f"Header validation failed: Previous hash {prev_hash[:10]}... is unknown.")
             return False
+        
+        MAX_FUTURE_TIME_SECONDS = 2 * 60 * 60 
+        current_node_time = int(time.time())
+        if block_header.timestamp > (current_node_time + MAX_FUTURE_TIME_SECONDS):
+            print(f"Header validation failed: Block timestamp ({block_header.timestamp}) is too far in the future")
+            return False
+        
+        if prev_hash != '00' * 32:
+            parent_block = db.get_block(prev_hash)
+            if not parent_block:
+                print(f"Header validation failed: Could not retrieve parent block {prev_hash[:10]} for timestamp check")
+                return False
             
-        # TODO: Add timestamp check (e.g., not after 2 hours in future)
+            parent_timestamp = parent_block['BlockHeader']['timestamp']
+            
+            if block_header.timestamp <= parent_timestamp:
+                print(f"Header validation failed: Block timestamp ({block_header.timestamp}) is not after parent timestamp ({parent_timestamp})")
+                return False
+            # TODO: Replace paren_timestamp with a real Median Time Past, we keep this for now
         return True
 
     def validate_block_body(self, block, db):
