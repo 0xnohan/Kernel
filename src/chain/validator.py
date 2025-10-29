@@ -26,10 +26,6 @@ class Validator:
             prev_tx_hex = tx_in.prev_tx.hex()
             
             if not is_in_block:
-                if tx_id in self.mempool:
-                    print(f"Validation Error (tx: {tx_id}): Transaction already in mempool")
-                    return False
-                
                 for mempool_tx in self.mempool.values():
                     for mempool_tx_in in mempool_tx.tx_ins:
                         if mempool_tx_in.prev_tx == tx_in.prev_tx and mempool_tx_in.prev_index == tx_in.prev_index:

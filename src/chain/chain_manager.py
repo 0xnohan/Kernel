@@ -1,6 +1,6 @@
+from threading import RLock
 
 from src.core.transaction import Tx
-import time
 from src.database.utxo_manager import UTXOManager
 from src.chain.mempool import Mempool
 from src.chain.validator import Validator
@@ -13,9 +13,27 @@ class ChainManager:
         self.mempool = mempool_db
         self.txindex = txindex_db
         self.new_block_event = new_block_event
+
         self.validator = Validator(self.utxos, self.mempool)
         self.utxo_manager = UTXOManager(self.utxos)
         self.mempool_manager = Mempool(self.mempool, self.utxos)
+        self.mempool_lock = RLock()
+
+    
+    def add_transaction_to_mempool(self, tx):
+        tx_id = tx.id()
+        with self.mempool_lock:
+            if tx_id in self.mempool:
+                print(f"Tx {tx_id[:10]}... already in mempool, rejected...")
+                return False
+
+            if not self.validator.validate_transaction(tx, is_in_block=False):
+                print(f"Tx {tx_id[:10]}... validation failed, rejected...")
+                return False
+            
+            print(f"Tx {tx_id[:10]}... accepted in mempool")
+            self.mempool[tx_id] = tx
+            return True
 
     def process_new_block(self, block_obj):
         block_hash = block_obj.BlockHeader.generateBlockHash()

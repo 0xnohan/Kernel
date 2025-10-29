@@ -46,19 +46,19 @@ def handle_broadcasts(broadcast_queue, sync_manager, new_block_event):
             new_block_event.set()
 
 
-def handle_new_transactions(new_tx_queue, sync_manager, validator, mempool):
+def handle_new_transactions(new_tx_queue, sync_manager, chain_manager):
     while True:
-        tx = new_tx_queue.get()
-        tx_id = tx.id()
-        if tx_id in mempool: 
-            continue
-
-        if validator.validate_transaction(tx):
-            mempool[tx_id] = tx 
-            print(f"Transaction {tx_id[:10]}... added to mempool")
-            sync_manager.broadcast_tx(tx)
-        else:
-            print(f"Daemon discarded invalid transaction {tx_id} from RPC")
+        try:
+            tx = new_tx_queue.get()
+            if not tx:
+                continue
+            was_added = chain_manager.add_transaction_to_mempool(tx)
+            
+            if was_added:
+                sync_manager.broadcast_tx(tx)
+            
+        except Exception as e:
+            print(f"Error in thread {e}")
 
 
 def main():
@@ -86,7 +86,6 @@ def main():
 
     chain_manager = ChainManager(db, utxos_db, mempool_db, txindex_db, new_block_event)
     utxo_manager = UTXOManager(utxos_db)
-    validator = Validator(utxos_db, mempool_db)
 
     if not db.get_main_chain_tip_hash():
         print("No main chain tip found. Checking for Genesis block...")
@@ -165,7 +164,7 @@ def main():
     rpc_thread.start()
 
     #Tx Thread
-    tx_handler_thread = Thread(target=handle_new_transactions, args=(new_tx_queue, sync_manager, validator, mempool_db))
+    tx_handler_thread = Thread(target=handle_new_transactions, args=(new_tx_queue, sync_manager, chain_manager))
     tx_handler_thread.daemon = True
     tx_handler_thread.start()
     

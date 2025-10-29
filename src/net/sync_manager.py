@@ -308,15 +308,18 @@ class SyncManager:
 
     def handle_tx(self, tx_obj, origin_peer_socket=None):
         tx_id = tx_obj.id()
-        if tx_id in self.mempool:
+        if not self.chain_manager:
+            print(f"ChainManager is not initialised. Tx {tx_id[:10]}... rejected...")
             return
+        try:
+            tx_was_added = self.chain_manager.add_transaction_to_mempool(tx_obj)
+            if tx_was_added:
+                print(f"Tx {tx_id[:10]}... added, broadcasting...")
+                self.broadcast_tx(tx_obj, origin_peer_socket)
+     
+        except Exception as e:
+            print(f"Error with tx {tx_id[:10]}...: {e}")
 
-        if self.validator.validate_transaction(tx_obj):
-            print(f"Transaction {tx_id[:10]}... is valid. Adding to mempool")
-            self.mempool[tx_id] = tx_obj
-            self.broadcast_tx(tx_obj, origin_peer_socket)
-        else:
-            print(f"Transaction {tx_id[:10]}... is invalid. Discarding")
 
     def handle_block(self, block_obj, origin_peer_socket=None):
         block_hash = block_obj.BlockHeader.generateBlockHash()
