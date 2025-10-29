@@ -11,7 +11,7 @@ from src.chain.mempool import Mempool
 from src.core.coinbase_tx import CoinbaseTx
 from src.core.block import Block
 from src.chain.validator import Validator
-from database.utxo_manager import UTXOManager
+from src.database.utxo_manager import UTXOManager
 from src.chain.difficulty import calculate_new_bits
 
 RPC_CONTEXT = {}
