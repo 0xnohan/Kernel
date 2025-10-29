@@ -15,6 +15,9 @@ class Miner:
         self.stop_mining_event = Event()
         self.mining_thread = None
 
+        self.current_work_prev_hash = None
+        self.current_work_merkle_root = None
+
 
     def send_rpc_command(self, command, timeout=120.0):
         try:
@@ -65,28 +68,39 @@ class Miner:
         print("Miner process started, waiting for work...")
         while True:
             response = self.send_rpc_command({"command": "get_work"})
+            if not response:
+                print("Could not get work: No response from daemon. Retrying in 5 seconds...")
+                time.sleep(5)
+                continue
             
+            if response.get('status') != 'success':
+                error_message = response.get('message', 'Unknown error')
+                print(f"Could not get a valid work template. ERROR: {error_message}. Retrying in 5 seconds...")
+                time.sleep(5)
+                continue 
+        
+            template = response['template']
+
+            new_prev_hash = template['previous_block_hash']
+            transactions = [Tx.to_obj(tx_data) for tx_data in template['transactions']]
+            tx_ids = [bytes.fromhex(tx.id()) for tx in transactions]
+            new_merkle_root = merkle_root(tx_ids)
+            is_new_work = (new_prev_hash != self.current_work_prev_hash or new_merkle_root != self.current_work_merkle_root)
+            if not is_new_work and self.mining_thread and self.mining_thread.is_alive():
+                continue 
+
             if self.mining_thread and self.mining_thread.is_alive():
-                print("New work received, interrupting current mining task")
+                print("New work received (new block or txs), interrupting current mining task...")
                 self.stop_mining_event.set()
                 self.mining_thread.join()
 
-            if not response or response.get('status') != 'success':
-                if response is not None: 
-                    print("Could not get a valid work template. Retrying in 5 seconds...")
-                    time.sleep(5)
-                continue 
-
-            template = response['template']
-            
-            transactions = [Tx.to_obj(tx_data) for tx_data in template['transactions']]
-            tx_ids = [bytes.fromhex(tx.id()) for tx in transactions]
-            merkle_tree_root = merkle_root(tx_ids)
+            self.current_work_prev_hash = new_prev_hash
+            self.current_work_merkle_root = new_merkle_root
 
             block_header = BlockHeader(
                 version=template['version'],
                 prevBlockHash=bytes.fromhex(template['previous_block_hash']),
-                merkleRoot=merkle_tree_root[::-1],
+                merkleRoot=new_merkle_root[::-1], 
                 timestamp=int(time.time()),
                 bits=bytes.fromhex(template['bits']),
                 nonce=0

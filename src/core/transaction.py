@@ -7,6 +7,7 @@ from src.utils.serialization import (
     read_varint, decode_base58
 )
 from src.utils.crypto_hash import hash256
+from secp256k1 import PublicKey
 
 
 SIGHASH_ALL = 1
@@ -81,12 +82,14 @@ class Tx:
         return int.from_bytes(h256, "big")
 
     def sign_input(self, input_index, private_key, script_pubkey):
-        z = self.sigh_hash(input_index, script_pubkey)
-        der = private_key.sign(z).der()
+        z = self.sigh_hash(input_index, script_pubkey) 
+        z_bytes = z.to_bytes(32, 'big')
+        sig_obj = private_key.ecdsa_sign(z_bytes)
+        der = private_key.ecdsa_serialize_der(sig_obj)
         sig = der + SIGHASH_ALL.to_bytes(1, "big")
-        sec = private_key.point.sec()
+        sec = private_key.pubkey.serialize(compressed=True)
         self.tx_ins[input_index].script_sig = Script([sig, sec])
-
+    
     def verify_input(self, input_index, script_pubkey):
         tx_in = self.tx_ins[input_index]
         z = self.sigh_hash(input_index, script_pubkey)

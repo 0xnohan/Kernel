@@ -4,7 +4,8 @@ from src.utils.serialization import decode_base58
 from src.scripts.script import Script
 from src.core.transaction import TxIn, TxOut, Tx
 from src.database.db_manager import AccountDB
-from src.utils.elleptic_curve import PrivateKey
+
+from secp256k1 import PrivateKey
 
 from src.chain.params import TX_BASE_SIZE, TX_INPUT_SIZE, TX_OUTPUT_SIZE,COIN
 
@@ -36,8 +37,8 @@ class Send:
     def getPrivateKey(self):
         AllAccounts = AccountDB().get_all_wallets()
         if not AllAccounts:
-             print("Error: Could not read accounts.")
-             return None
+            print("Error: Could not read accounts.")
+            return None
         for account in AllAccounts:
             if account.get("PublicAddress") == self.FromPublicAddress:
                 return account.get("privateKey")
@@ -114,31 +115,31 @@ class Send:
         self.fee = int(estimated_size * self.feeRate)
 
         if self.Total < amount_to_send_kernel + self.fee:
-             print(f"Insufficient funds for amount + fee: Required {amount_to_send_kernel + self.fee}, Available {self.Total}")
-             self.isBalanceEnough = False
-             return []
+            print(f"Insufficient funds for amount + fee: Required {amount_to_send_kernel + self.fee}, Available {self.Total}")
+            self.isBalanceEnough = False
+            return []
         
         try:
-             to_scriptPubkey = self.scriptPubKey(self.toAccount)
-             TxOuts.append(TxOut(amount_to_send_kernel, to_scriptPubkey))
+            to_scriptPubkey = self.scriptPubKey(self.toAccount)
+            TxOuts.append(TxOut(amount_to_send_kernel, to_scriptPubkey))
         except Exception as e:
-             print(f"Error creating scriptPubKey for receiver: {e}")
-             return []
+            print(f"Error creating scriptPubKey for receiver: {e}")
+            return []
 
         self.changeAmount = self.Total - amount_to_send_kernel - self.fee
 
         if self.changeAmount > 0:
             if hasattr(self, 'From_address_script_pubkey'):
-                 TxOuts.append(TxOut(self.changeAmount, self.From_address_script_pubkey))
+                TxOuts.append(TxOut(self.changeAmount, self.From_address_script_pubkey))
             else:
-                 print("Error: Sender scriptPubKey not available for change output.")
+                print("Error: Sender scriptPubKey not available for change output.")
 
         elif self.changeAmount == 0:
             num_outputs = 1
 
         else:
-             print("Error: Negative change amount calculated.")
-             return []
+            print("Error: Negative change amount calculated.")
+            return []
 
         final_size = self.estimate_tx_size(num_inputs=len(self.TxIns), num_outputs=num_outputs)
         self.fee = int(final_size * self.feeRate)
@@ -149,14 +150,15 @@ class Send:
     def signTx(self):
         secret = self.getPrivateKey()
         if secret is None:
-             print("Error: Cannot sign transaction without private key.")
-             return False
+            print("Error: Cannot sign transaction without private key.")
+            return False
 
         try:
-             priv = PrivateKey(secret=int(secret))
+            secret_bytes = int(secret).to_bytes(32, 'big')
+            priv = PrivateKey(privkey=secret_bytes)
         except Exception as e:
-             print(f"Error creating PrivateKey object: {e}")
-             return False
+            print(f"Error creating PrivateKey object: {e}")
+            return False
 
         if not hasattr(self, 'From_address_script_pubkey'):
             print("Error: Sender scriptPubKey not defined, cannot sign.")
@@ -164,12 +166,12 @@ class Send:
 
         print(f"Signing transaction {self.TxObj.id()}...")
         for index, tx_in in enumerate(self.TxIns):
-             print(f"Signing input #{index} spending UTXO {tx_in.prev_tx.hex()}:{tx_in.prev_index}")
-             try:
-                 self.TxObj.sign_input(index, priv, self.From_address_script_pubkey)
-             except Exception as e:
-                  print(f"Error signing input {index}: {e}")
-                  return False
+            print(f"Signing input #{index} spending UTXO {tx_in.prev_tx.hex()}:{tx_in.prev_index}")
+            try:
+                self.TxObj.sign_input(index, priv, self.From_address_script_pubkey)
+            except Exception as e:
+                print(f"Error signing input {index}: {e}")
+                return False
         print("Transaction signing complete.")
         return True
 
@@ -187,8 +189,8 @@ class Send:
             return False 
 
         if not self.TxIns or not self.TxOuts: 
-             print("DEBUG: Transaction preparation failed (TxIns or TxOuts missing).")
-             return False
+            print("DEBUG: Transaction preparation failed (TxIns or TxOuts missing).")
+            return False
 
         self.TxObj = Tx(1, self.TxIns, self.TxOuts, 0)
         self.TxObj.fee = self.fee 
@@ -196,8 +198,8 @@ class Send:
 
         #Signature
         if not self.signTx():
-             print("DEBUG: Transaction preparation failed due to signing error.")
-             return False
+            print("DEBUG: Transaction preparation failed due to signing error.")
+            return False
 
         self.TxObj.TxId = self.TxObj.id()
         print(f"Transaction prepared successfully: {self.TxObj.TxId}")
