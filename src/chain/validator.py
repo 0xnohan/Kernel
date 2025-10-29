@@ -54,7 +54,15 @@ class Validator:
                 )
                 return False
 
-            input_sum += prev_tx_obj.tx_outs[tx_in.prev_index].amount
+            output_to_spend = prev_tx_obj.tx_outs[tx_in.prev_index]
+
+            if output_to_spend is None:
+                logger.error(
+                    f"Validation Error (tx: {tx_id}): Output {prev_tx_hex}:{tx_in.prev_index} already spent"
+                )
+                return False
+
+            input_sum += output_to_spend.amount
 
         output_sum = sum(tx_out.amount for tx_out in tx.tx_outs)
         if output_sum > input_sum:
@@ -66,6 +74,13 @@ class Validator:
         for i, tx_in in enumerate(tx.tx_ins):
             prev_tx_obj = self.utxos[tx_in.prev_tx.hex()]
             output_to_spend = prev_tx_obj.tx_outs[tx_in.prev_index]
+
+            if output_to_spend is None:
+                logger.error(
+                    f"Validation Error (tx: {tx_id}): Output already spent (signature check) for input {i}"
+                )
+                return False
+
             script_pubkey = output_to_spend.script_pubkey
 
             if not tx.verify_input(i, script_pubkey):

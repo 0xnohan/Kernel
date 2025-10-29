@@ -145,7 +145,9 @@ class TCPRequestHandler(socketserver.BaseRequestHandler):
                             "message": f"Invalid block format or hex: {e}",
                         }
                     except Exception as e:
-                        logger.error(f"Unexpected error in submit_block: {e}", exc_info=True)
+                        logger.error(
+                            f"Unexpected error in submit_block: {e}", exc_info=True
+                        )
                         response = {
                             "status": "error",
                             "message": f"Error processing block:{e}",
@@ -203,12 +205,11 @@ class TCPRequestHandler(socketserver.BaseRequestHandler):
                             "message": "Missing required parameters (from, to, amount)",
                         }
                         self.request.sendall(json.dumps(response).encode("utf-8"))
-                        
 
                     from_addr = params["from"]
                     to_addr = params["to"]
                     amount_float = float(params["amount"])
-                    fee_rate = int(params.get("fee_rate", FEE_RATE_NORMAL)) 
+                    fee_rate = int(params.get("fee_rate", FEE_RATE_NORMAL))
 
                     send_handler = Send(
                         from_addr,
@@ -218,7 +219,7 @@ class TCPRequestHandler(socketserver.BaseRequestHandler):
                         utxos,
                         mempool,
                     )
-                    
+
                     tx = send_handler.prepareTransaction()
 
                     if not tx:
@@ -227,7 +228,7 @@ class TCPRequestHandler(socketserver.BaseRequestHandler):
                             "message": "Failed to create transaction. Check balance, addresses, and UTXO availability",
                         }
                     elif not new_tx_queue:
-                         response = {
+                        response = {
                             "status": "error",
                             "message": "Cannot broadcast transaction, daemon queue not available",
                         }
@@ -245,7 +246,7 @@ class TCPRequestHandler(socketserver.BaseRequestHandler):
                         "message": "Invalid amount or fee_rate. Must be a number",
                     }
                 except KeyError as e:
-                     response = {
+                    response = {
                         "status": "error",
                         "message": f"Missing parameter: {e}",
                     }

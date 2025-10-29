@@ -219,7 +219,7 @@ class SyncManager:
                 except (RuntimeError, ValueError, IndexError, SyntaxError) as e:
                     logger.error(
                         f"Failed to parse message from {peer_id_str}: {e}. Discarding message",
-                        exc_info=True
+                        exc_info=True,
                     )
                     continue
 

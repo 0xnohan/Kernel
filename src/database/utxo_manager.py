@@ -53,8 +53,19 @@ class UTXOManager:
 
                 if 0 <= output_index < len(tx_obj.tx_outs):
 
-                    del self.utxos[tx_id_hex]
+                    tx_obj.tx_outs[output_index] = None
+                    all_spent = True
+                    for out in tx_obj.tx_outs:
+                        if out is not None:
+                            all_spent = False
+                            break
+
+                    if all_spent:
+                        del self.utxos[tx_id_hex]
+                    else:
+                        self.utxos[tx_id_hex] = tx_obj
+
                 else:
                     logging.warning(
-                        f"Output index {output_index} out of range for Tx {tx_id_hex}."
+                        f"Output index {output_index} out of range for Tx {tx_id_hex}"
                     )

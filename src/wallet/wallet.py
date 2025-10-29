@@ -39,7 +39,7 @@ class wallet:
                 count += 1
             else:
                 break
-            
+
         """ Convert to Numeric from Bytes """
         num = int.from_bytes(newAddr, "big")
         prefix = "1" * count

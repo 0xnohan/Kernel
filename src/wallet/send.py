@@ -81,6 +81,9 @@ class Send:
             if not hasattr(TxObj, "tx_outs"):
                 continue
             for index, txout in enumerate(TxObj.tx_outs):
+                if txout is None:
+                    continue
+
                 utxo_id = f"{tx_hex}_{index}"
                 if (
                     hasattr(txout.script_pubkey, "cmds")
