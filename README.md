@@ -5,7 +5,7 @@ This project is directly inspired by the consensus mechanism and chain structure
 The consensus is based on the **Proof-of-Work algorithm**, where miners must solve complex cryptographic problems to validate new blocks and add them to the chain.  
 The validation process uses the SHA-256 function to ensure the integrity of each block's data. Each block contains a hash of the previous block, creating a secure and immutable chain of blocks.
 
-By adopting this mechanism, my project simulates adding transactions to a block, finding the correct "nonce" to solve the cryptographic problem, and managing consensus through a local network of actors. However, this is a prototype with minimal security and is currently not resistant to attacks. The primary goal is to faithfully replicate the functioning of a blockchain.
+By adopting this mechanism, my project simulates adding transactions to a block, finding the correct "nonce" to solve the cryptographic problem, and managing consensus through a local network of actors. However, this is a prototype with minimal security and is currently not well resistant to attacks. The primary goal is to faithfully replicate the functioning of a blockchain.
 
 ## 📝 Table of Contents
 
@@ -34,9 +34,9 @@ The project is now structured around a client-daemon architecture for better mod
 - **Proof-of-Work Mining**: Miners can validate transactions and create new blocks to earn a reward.
 - **Wallet Management**: Create addresses and send transactions directly from the command-line client.
 - **Explorer API**: Exposes endpoints to track the chain's status, and view blocks, transactions, and addresses.
-- **Block Reward**: The block reward consist of an initial reward of 50 KNL per block. The reward is reduced by 25% every 250,000 blocks.
-  Amounts are denominated in KNL, divisible down to the smallest unit, the kernel (1 KNL = 10^8 kernels).
-  This geometrically decreasing reward ensures a finite total coin supply of 50 000 000 KNL
+- **Block Reward**: The block reward consist of an initial reward of 50 KOR per block. The reward is reduced by 25% every 250,000 blocks.
+  Amounts are denominated in KOR, divisible down to the smallest unit, the kore (1 KOR = 10^8 kores).
+  This geometrically decreasing reward ensures a finite total coin supply of 50 000 000 KOR
   
 ## Technologies Used
 
@@ -100,17 +100,28 @@ Before getting started, ensure you have the following installed:
 
 ### Current Version
 
-- **Kernel Version**: 1.32.3
+- **Kernel Version**: 1.33.0
 - **Date**: October 2025
 
 **New Changes**:
+- Add database for UTXOs, Mempool & index block
+- Refactor code for Blockchain DB, now created by hash instead of index
+- Add ChainManager 
+- Add second chain for PoW when 2 miners find a block in the same time (taking the chain with the longest PoW)
+- Adding separate Thread and Queue for the deamon process
+- Split mining process and Core process -> Creating KernelX (miner)
+- Major bugs fixs:
+   - Deleting elleptic_curve.py -> import secp256k1
+   - Adding atomic operation for blocks & txs -> Avoiding double spending problem
+   - Adding better initial block download when a peer have to dl the entire chain
+   - Fixing bug of potential Coinbase Tx duplication
+
+**Last Changes**:
 - Fix bugs in validator.py, miner.py, sync_manager.py
 - Add a stable p2p system (mining race, messages (inv, addr, headers,...), timeout, broadcast inventory, share peers)
 - Implement connection between nodes
 - Change for sqldict instead of .json for a better structure (test for now)
 - Add dynamics fees for transactions
-
-**Last Changes**:
 - Changed the architecture of the project to split the files for better understanding
 - Added settings in the client to configure the ini file (ports, miner, host,...)
 - Added new utils files to load configurations
@@ -118,7 +129,7 @@ Before getting started, ensure you have the following installed:
 - Split the blockchain.py file in different processes (pow, utxos_manager, mempool and chain)
 - Bug fixes for data type in blockheader
 - Renaming files and removing unused imports/packages
-- Minors bug fixes
+- Minor bugs fix
 
 ### Previous Versions
 
@@ -131,7 +142,7 @@ Before getting started, ensure you have the following installed:
 - Architecture change when launching the daemon
 - Delete the run.py file for a new server API for frontend explorer
 - Ability to create a wallet and send coins directly from the CLI
-- Minors bug fixes
+- Minor bugs fix
 
 #### Kernel 1.10
 - **Date**: August 2025
@@ -142,7 +153,7 @@ Before getting started, ensure you have the following installed:
 - Blockchain explorer redesign
 - Change in the reward system (deflationary)
 - Start managing network nodes and seed nodes
-- Security and majors bug fixes: mempool/networks/blockchain download with peers
+- Security and major bugs fix: mempool/networks/blockchain download with peers
 
 
 #### Noctal Version 1 

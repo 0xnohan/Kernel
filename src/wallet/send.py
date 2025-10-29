@@ -7,7 +7,7 @@ from src.database.db_manager import AccountDB
 
 from secp256k1 import PrivateKey
 
-from src.chain.params import TX_BASE_SIZE, TX_INPUT_SIZE, TX_OUTPUT_SIZE,COIN
+from src.chain.params import TX_BASE_SIZE, TX_INPUT_SIZE, TX_OUTPUT_SIZE, KOR
 
 class Send:
     def __init__(self, fromAccount, toAccount, Amount_float, feeRate, UTXOS, MEMPOOL):
@@ -20,7 +20,7 @@ class Send:
         self.isBalanceEnough = True
 
         if isinstance(Amount_float, (int, float)) and Amount_float > 0:
-            self.Amount = int(Amount_float * COIN)
+            self.Amount = int(Amount_float * KOR)
         else:
             self.Amount = 0
             self.isBalanceEnough = False
@@ -108,25 +108,25 @@ class Send:
 
     def prepareTxOut(self):
         TxOuts = []
-        amount_to_send_kernel = self.Amount
+        amount_to_send_kores = self.Amount
 
         num_outputs = 2 #2 for now (receiver & sender)
         estimated_size = self.estimate_tx_size(num_inputs=len(self.TxIns), num_outputs=num_outputs)
         self.fee = int(estimated_size * self.feeRate)
 
-        if self.Total < amount_to_send_kernel + self.fee:
-            print(f"Insufficient funds for amount + fee: Required {amount_to_send_kernel + self.fee}, Available {self.Total}")
+        if self.Total < amount_to_send_kores + self.fee:
+            print(f"Insufficient funds for amount + fee: Required {amount_to_send_kores + self.fee}, Available {self.Total}")
             self.isBalanceEnough = False
             return []
         
         try:
             to_scriptPubkey = self.scriptPubKey(self.toAccount)
-            TxOuts.append(TxOut(amount_to_send_kernel, to_scriptPubkey))
+            TxOuts.append(TxOut(amount_to_send_kores, to_scriptPubkey))
         except Exception as e:
             print(f"Error creating scriptPubKey for receiver: {e}")
             return []
 
-        self.changeAmount = self.Total - amount_to_send_kernel - self.fee
+        self.changeAmount = self.Total - amount_to_send_kores - self.fee
 
         if self.changeAmount > 0:
             if hasattr(self, 'From_address_script_pubkey'):

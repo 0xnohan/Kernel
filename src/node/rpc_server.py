@@ -57,11 +57,11 @@ def calculate_wallet_balances(wallets, utxos_db):
     if not h160_list:
         return wallets
 
-    balances_kernels = utxos_db.get_balances(h160_list)
+    balances_kores = utxos_db.get_balances(h160_list)
     
     for h160_hex, wallet in wallet_map.items():
-        balance_knl = balances_kernels.get(h160_hex, 0) / 100000000
-        wallet['balance'] = balance_knl
+        balance_kor = balances_kores.get(h160_hex, 0) / 100000000
+        wallet['balance'] = balance_kor
         
     return wallets
 
