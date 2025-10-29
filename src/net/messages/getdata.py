@@ -1,4 +1,5 @@
-from .inv import Inv 
+from .inv import Inv
+
 
 class GetData(Inv):
-    command = b'getdata'
+    command = b"getdata"

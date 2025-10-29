@@ -1,8 +1,10 @@
 import time
+
 from src.utils.serialization import int_to_little_endian, little_endian_to_int
 
+
 class Ping:
-    command = b'ping'
+    command = b"ping"
 
     def __init__(self, nonce=int(time.time())):
         self.nonce = nonce

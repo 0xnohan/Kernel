@@ -1,11 +1,17 @@
-from src.utils.serialization import read_varint, encode_varint, int_to_little_endian, little_endian_to_int
+from src.utils.serialization import (
+    encode_varint,
+    int_to_little_endian,
+    little_endian_to_int,
+    read_varint,
+)
 
 INV_TYPE_ERROR = 0
 INV_TYPE_TX = 1
 INV_TYPE_BLOCK = 2
 
+
 class Inv:
-    command = b'inv'
+    command = b"inv"
 
     def __init__(self, items):
         self.items = items

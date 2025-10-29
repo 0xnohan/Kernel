@@ -1,8 +1,8 @@
 class GetAddr:
-    command = b'getaddr'
+    command = b"getaddr"
 
     def serialize(self):
-        return b''
+        return b""
 
     @classmethod
     def parse(cls, stream):

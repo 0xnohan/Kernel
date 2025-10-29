@@ -1,5 +1,6 @@
-from src.utils.crypto_hash import hash160
 from secp256k1 import PublicKey
+
+from src.utils.crypto_hash import hash160
 
 
 def op_dup(stack):
@@ -58,19 +59,18 @@ def op_checksig(stack, z):
         sec_pubkey = stack.pop()
         der_signature_with_flag = stack.pop()
         der_signature = der_signature_with_flag[:-1]
-        z_bytes = z.to_bytes(32, 'big')
+        z_bytes = z.to_bytes(32, "big")
         pub_key_obj = PublicKey(sec_pubkey, raw=True)
         raw_sig_obj = pub_key_obj.ecdsa_deserialize(der_signature)
         verified = pub_key_obj.ecdsa_verify(z_bytes, raw_sig_obj)
     except Exception as e:
-        print(f"Error signature verification : {e}")
         verified = False
-    
+
     if verified:
         stack.append(1)
     else:
         stack.append(0)
-        
+
     return verified
 
 
