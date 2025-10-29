@@ -1,7 +1,15 @@
-from src.utils.serialization import int_to_little_endian, encode_varint, little_endian_to_int, read_varint
-from src.scripts.opcodes import OP_CODE_FUNCTION
 import logging
+
+from src.scripts.opcodes import OP_CODE_FUNCTION
+from src.utils.serialization import (
+    encode_varint,
+    int_to_little_endian,
+    little_endian_to_int,
+    read_varint,
+)
+
 logger = logging.getLogger(__name__)
+
 
 class Script:
     def __init__(self, cmds=None):
@@ -16,7 +24,7 @@ class Script:
     def serialize(self):
         result = b""
         for cmd in self.cmds:
-       
+
             if type(cmd) == int:
                 result += int_to_little_endian(cmd, 1)
             else:
@@ -65,7 +73,7 @@ class Script:
                 op_code = current_byte
                 cmds.append(op_code)
         if count != length:
-            raise SyntaxError('parsing script failed')
+            raise SyntaxError("parsing script failed")
         return cls(cmds)
 
     def evaluate(self, z):

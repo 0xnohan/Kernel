@@ -1,9 +1,11 @@
 import time
-from src.utils.serialization import int_to_little_endian, little_endian_to_int
+
 from src.chain.params import VERSION
+from src.utils.serialization import int_to_little_endian, little_endian_to_int
+
 
 class Version:
-    command = b'version'
+    command = b"version"
 
     def __init__(self, version=VERSION, start_height=0, timestamp=None):
         self.version = version

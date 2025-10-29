@@ -1,19 +1,19 @@
 from src.scripts.script import Script
-from src.utils.serialization import (
-    int_to_little_endian,
-    bytes_needed,
-    little_endian_to_int,
-    encode_varint,
-    read_varint, decode_base58
-)
 from src.utils.crypto_hash import hash256
-from secp256k1 import PublicKey
-
+from src.utils.serialization import (
+    bytes_needed,
+    encode_varint,
+    int_to_little_endian,
+    little_endian_to_int,
+    read_varint,
+)
 
 SIGHASH_ALL = 1
 
+
 class Tx:
-    command = b'Tx'
+    command = b"Tx"
+
     def __init__(self, version, tx_ins, tx_outs, locktime):
         self.version = version
         self.tx_ins = tx_ins
@@ -61,15 +61,19 @@ class Tx:
 
         for i, tx_in in enumerate(self.tx_ins):
             if i == input_index:
-                s += TxIn(prev_tx=tx_in.prev_tx,
+                s += TxIn(
+                    prev_tx=tx_in.prev_tx,
                     prev_index=tx_in.prev_index,
                     script_sig=script_pubkey,
-                    sequence=tx_in.sequence).serialize()
+                    sequence=tx_in.sequence,
+                ).serialize()
             else:
-                s += TxIn(prev_tx=tx_in.prev_tx,
+                s += TxIn(
+                    prev_tx=tx_in.prev_tx,
                     prev_index=tx_in.prev_index,
                     script_sig=Script(),
-                    sequence=tx_in.sequence).serialize()
+                    sequence=tx_in.sequence,
+                ).serialize()
 
         s += encode_varint(len(self.tx_outs))
 
@@ -82,15 +86,15 @@ class Tx:
         return int.from_bytes(h256, "big")
 
     def sign_input(self, input_index, private_key, script_pubkey):
-        z = self.sigh_hash(input_index, script_pubkey)      
-        z_bytes = z.to_bytes(32, 'big')
+        z = self.sigh_hash(input_index, script_pubkey)
+        z_bytes = z.to_bytes(32, "big")
         raw_sig_obj = private_key.ecdsa_sign(z_bytes)
         pub_key = private_key.pubkey
         der = pub_key.ecdsa_serialize(raw_sig_obj)
         sig = der + SIGHASH_ALL.to_bytes(1, "big")
         sec = private_key.pubkey.serialize(compressed=True)
         self.tx_ins[input_index].script_sig = Script([sig, sec])
-    
+
     def verify_input(self, input_index, script_pubkey):
         tx_in = self.tx_ins[input_index]
         z = self.sigh_hash(input_index, script_pubkey)
@@ -111,67 +115,74 @@ class Tx:
     def to_obj(cls, item):
         TxInList = []
         TxOutList = []
-        
-        for tx_in_data in item['tx_ins']:
+
+        for tx_in_data in item["tx_ins"]:
             cmds = []
-            if 'cmds' in tx_in_data['script_sig']:
-                for cmd in tx_in_data['script_sig']['cmds']:
+            if "cmds" in tx_in_data["script_sig"]:
+                for cmd in tx_in_data["script_sig"]["cmds"]:
                     if isinstance(cmd, int):
                         cmds.append(int_to_little_endian(cmd, bytes_needed(cmd)))
                     else:
                         cmds.append(bytes.fromhex(cmd))
             script_sig = Script(cmds)
-            TxInList.append(TxIn(bytes.fromhex(tx_in_data['prev_tx']), tx_in_data['prev_index'], script_sig))
+            TxInList.append(
+                TxIn(
+                    bytes.fromhex(tx_in_data["prev_tx"]),
+                    tx_in_data["prev_index"],
+                    script_sig,
+                )
+            )
 
-        for tx_out_data in item['tx_outs']:
+        for tx_out_data in item["tx_outs"]:
             cmdsout = []
-            if 'cmds' in tx_out_data['script_pubkey']:
-                for cmd in tx_out_data['script_pubkey']['cmds']:
+            if "cmds" in tx_out_data["script_pubkey"]:
+                for cmd in tx_out_data["script_pubkey"]["cmds"]:
                     if isinstance(cmd, int):
                         cmdsout.append(cmd)
                     else:
                         cmdsout.append(bytes.fromhex(cmd))
             script_pubkey = Script(cmdsout)
-            TxOutList.append(TxOut(tx_out_data['amount'], script_pubkey))
-        
-        return cls(item['version'], TxInList, TxOutList, item['locktime'])
-                
+            TxOutList.append(TxOut(tx_out_data["amount"], script_pubkey))
+
+        return cls(item["version"], TxInList, TxOutList, item["locktime"])
+
     def to_dict(self):
         result = self.__dict__.copy()
-        result['TxId'] = self.id()
-        result['tx_ins'] = []
+        result["TxId"] = self.id()
+        result["tx_ins"] = []
         for tx_in in self.tx_ins:
             tx_in_dict = tx_in.__dict__.copy()
-            tx_in_dict['prev_tx'] = tx_in.prev_tx.hex()
-            
+            tx_in_dict["prev_tx"] = tx_in.prev_tx.hex()
+
             script_sig_dict = tx_in.script_sig.__dict__.copy()
             cmds_hex = []
-            for cmd in script_sig_dict['cmds']:
-                if isinstance(cmd, bytes):
-                    cmds_hex.append(cmd.hex())
-                else: 
-                    cmds_hex.append(cmd)
-            script_sig_dict['cmds'] = cmds_hex
-            tx_in_dict['script_sig'] = script_sig_dict
-            
-            result['tx_ins'].append(tx_in_dict)
-
-        result['tx_outs'] = []
-        for tx_out in self.tx_outs:
-            tx_out_dict = tx_out.__dict__.copy()
-            script_pubkey_dict = tx_out.script_pubkey.__dict__.copy()
-            cmds_hex = []
-            for cmd in script_pubkey_dict['cmds']:
+            for cmd in script_sig_dict["cmds"]:
                 if isinstance(cmd, bytes):
                     cmds_hex.append(cmd.hex())
                 else:
                     cmds_hex.append(cmd)
-            script_pubkey_dict['cmds'] = cmds_hex
-            tx_out_dict['script_pubkey'] = script_pubkey_dict
-            result['tx_outs'].append(tx_out_dict)
+            script_sig_dict["cmds"] = cmds_hex
+            tx_in_dict["script_sig"] = script_sig_dict
+
+            result["tx_ins"].append(tx_in_dict)
+
+        result["tx_outs"] = []
+        for tx_out in self.tx_outs:
+            tx_out_dict = tx_out.__dict__.copy()
+            script_pubkey_dict = tx_out.script_pubkey.__dict__.copy()
+            cmds_hex = []
+            for cmd in script_pubkey_dict["cmds"]:
+                if isinstance(cmd, bytes):
+                    cmds_hex.append(cmd.hex())
+                else:
+                    cmds_hex.append(cmd)
+            script_pubkey_dict["cmds"] = cmds_hex
+            tx_out_dict["script_pubkey"] = script_pubkey_dict
+            result["tx_outs"].append(tx_out_dict)
 
         return result
-    
+
+
 class TxIn:
     def __init__(self, prev_tx, prev_index, script_sig=None, sequence=0xFFFFFFFF):
         self.prev_tx = prev_tx
@@ -197,6 +208,7 @@ class TxIn:
         sequence = little_endian_to_int(s.read(4))
         return cls(prev_tx, prev_index, script_sig, sequence)
 
+
 class TxOut:
     def __init__(self, amount, script_pubkey):
         self.amount = amount
@@ -208,7 +220,7 @@ class TxOut:
         return result
 
     @classmethod
-    def parse(cls,s):
+    def parse(cls, s):
         amount = little_endian_to_int(s.read(8))
         script_pubkey = Script.parse(s)
         return cls(amount, script_pubkey)

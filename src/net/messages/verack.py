@@ -1,11 +1,11 @@
 class VerAck:
-    command = b'verack'
+    command = b"verack"
 
     def __init__(self):
         pass
 
     def serialize(self):
-        return b''
+        return b""
 
     @classmethod
     def parse(cls, s):
