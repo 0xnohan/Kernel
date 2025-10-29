@@ -82,10 +82,11 @@ class Tx:
         return int.from_bytes(h256, "big")
 
     def sign_input(self, input_index, private_key, script_pubkey):
-        z = self.sigh_hash(input_index, script_pubkey) 
+        z = self.sigh_hash(input_index, script_pubkey)      
         z_bytes = z.to_bytes(32, 'big')
-        sig_obj = private_key.ecdsa_sign(z_bytes)
-        der = private_key.ecdsa_serialize_der(sig_obj)
+        raw_sig_obj = private_key.ecdsa_sign(z_bytes)
+        pub_key = private_key.pubkey
+        der = pub_key.ecdsa_serialize(raw_sig_obj)
         sig = der + SIGHASH_ALL.to_bytes(1, "big")
         sec = private_key.pubkey.serialize(compressed=True)
         self.tx_ins[input_index].script_sig = Script([sig, sec])

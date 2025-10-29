@@ -241,7 +241,9 @@ def get_block_details(block_hash):
                 "nonce": header.get("nonce"),
                 "timestamp": datetime.fromtimestamp(header.get('timestamp', 0), timezone.utc).isoformat(),
                 "transactions": formatted_txs,
-                "reward": 50
+                "reward": 50,
+                "version": header.get("version"),
+                "bits": header.get("bits")
             })
             
     return jsonify({"error": "Bloc not found"}), 404

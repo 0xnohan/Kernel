@@ -115,6 +115,7 @@ Before getting started, ensure you have the following installed:
    - Adding atomic operation for blocks & txs -> Avoiding double spending problem
    - Adding better initial block download when a peer have to dl the entire chain
    - Fixing bug of potential Coinbase Tx duplication
+   - Adding long polling in miner
 
 **Last Changes**:
 - Fix bugs in validator.py, miner.py, sync_manager.py
