@@ -19,6 +19,25 @@ from src.core.block import Block
 from src.chain.validator import Validator
 
 
+def handle_incoming_blocks(incoming_blocks_queue, chain_manager, broadcast_queue):
+    print("Block processing worker started")
+    while True:
+        try:
+            block_obj = incoming_blocks_queue.get()
+            if not block_obj:
+                continue
+
+            print(f"Processing block {block_obj.Height} from queue...")
+            
+            if chain_manager.process_new_block(block_obj):
+                print(f"Block {block_obj.Height} accepted, adding to broadcast queue")
+                broadcast_queue.put(block_obj)
+            else:
+                print(f"Block {block_obj.Height} rejected by ChainManager")
+                
+        except Exception as e:
+            print(f"FATAL ERROR in block processing worker: {e}")
+
 def handle_broadcasts(broadcast_queue, sync_manager, new_block_event):
     while True:
         block_to_broadcast = broadcast_queue.get()
@@ -53,6 +72,7 @@ def main():
     mining_process_manager = {'shutdown_requested': False}
     new_tx_queue = Queue()
     broadcast_queue = Queue()
+    incoming_blocks_queue = Queue()
     new_block_event = Event()
     
     print("Initializing databases...")
@@ -119,7 +139,7 @@ def main():
         utxos_db.commit()
         print(f"UTXO set rebuilt. {len(utxos_db)} UTXOs found")
 
-    sync_manager = SyncManager(host, p2p_port, new_block_event, None, mempool_db, utxos_db, chain_manager)
+    sync_manager = SyncManager(host, p2p_port, new_block_event, None, mempool_db, utxos_db, chain_manager, incoming_blocks_queue)
 
     # Thread P2P
     p2p_server_thread = Thread(target=sync_manager.spin_up_the_server)
@@ -139,11 +159,12 @@ def main():
         utxos_db, mempool_db, 
         mining_process_manager, 
         new_tx_queue, broadcast_queue, new_block_event, 
-        chain_manager
+        chain_manager, incoming_blocks_queue
     ))
     rpc_thread.daemon = True
     rpc_thread.start()
 
+    #Tx Thread
     tx_handler_thread = Thread(target=handle_new_transactions, args=(new_tx_queue, sync_manager, validator, mempool_db))
     tx_handler_thread.daemon = True
     tx_handler_thread.start()
@@ -151,6 +172,10 @@ def main():
     broadcast_handler_thread = Thread(target=handle_broadcasts, args=(broadcast_queue, sync_manager, new_block_event))
     broadcast_handler_thread.daemon = True
     broadcast_handler_thread.start()
+
+    block_handler_thread = Thread(target=handle_incoming_blocks, args=(incoming_blocks_queue, chain_manager, broadcast_queue))
+    block_handler_thread.daemon = True
+    block_handler_thread.start()
     
     time.sleep(2) 
     

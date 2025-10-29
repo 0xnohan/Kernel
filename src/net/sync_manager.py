@@ -20,7 +20,7 @@ from src.net.messages import (
 
 
 class SyncManager:
-    def __init__(self, host, port, new_block_event=None, secondaryChain=None, mempool=None, utxos=None, chain_manager=None):
+    def __init__(self, host, port, new_block_event=None, secondaryChain=None, mempool=None, utxos=None, chain_manager=None, incoming_blocks_queue=None):
         self.host = host
         self.port = port
         self.new_block_event = new_block_event
@@ -34,6 +34,8 @@ class SyncManager:
         
         self.utxo_manager = UTXOManager(self.utxos)
         self.mempool_manager = Mempool(self.mempool, self.utxos)
+
+        self.incoming_blocks_queue = incoming_blocks_queue
 
         self.peer_handshake_status = {}
         self.peers = {} 
@@ -318,15 +320,12 @@ class SyncManager:
 
     def handle_block(self, block_obj, origin_peer_socket=None):
         block_hash = block_obj.BlockHeader.generateBlockHash()
-        print(f"Received block {block_obj.Height} ({block_hash[:10]}...). Passing to ChainManager.")
+        print(f"Received block {block_obj.Height} ({block_hash[:10]}...). Adding to processing queue")
         
-        if self.chain_manager:
-            if self.chain_manager.process_new_block(block_obj):
-                self.broadcast_block(block_obj, origin_peer_socket)
-            else:
-                print(f"ChainManager rejected block {block_hash[:10]}...")
+        if self.incoming_blocks_queue is not None:
+            self.incoming_blocks_queue.put(block_obj)
         else:
-            print("WARN: ChainManager not initialized in SyncManager")
+            print("WARN: incoming_blocks_queue not initialized in SyncManager. Block discarded")
 
     def cleanup_peer_connection(self, peer_id, conn):
         if conn:

@@ -93,6 +93,7 @@ class TCPRequestHandler(socketserver.BaseRequestHandler):
             new_block_event = RPC_CONTEXT.get('new_block_event')
             mining_process_manager = RPC_CONTEXT.get('mining_process_manager')
             chain_manager = RPC_CONTEXT.get('chain_manager')
+            incoming_blocks_queue = RPC_CONTEXT.get('incoming_blocks_queue')
 
             response = {}
 
@@ -112,16 +113,13 @@ class TCPRequestHandler(socketserver.BaseRequestHandler):
                 block_hex = params.get('block_hex')
                 if not block_hex:
                     response = {"status": "error", "message": "block_hex parameter is required"}
-                elif not chain_manager:
-                    response = {"status": "error", "message": "ChainManager is not available"}
+                elif not incoming_blocks_queue:
+                    response = {"status": "error", "message": "Block processing queue is not available"}
                 else:
                     try:
                         block = Block.parse(BytesIO(bytes.fromhex(block_hex)))
-                        if chain_manager.process_new_block(block):
-                            response = {"status": "success", "message": f"Block {block.Height} accepted by ChainManager"}
-                            broadcast_queue.put(block) 
-                        else:
-                            response = {"status": "error", "message": "Block validation failed or was rejected by ChainManager"}
+                        incoming_blocks_queue.put(block)
+                        response = {"status": "success", "message": f"Block {block.Height} submitted for processing"}
 
                     except Exception as e:
                         import traceback
@@ -187,7 +185,7 @@ class TCPRequestHandler(socketserver.BaseRequestHandler):
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
 
-def rpcServer(host, rpcPort, utxos, mempool, mining_process_manager, new_tx_queue, broadcast_queue, new_block_event, chain_manager):
+def rpcServer(host, rpcPort, utxos, mempool, mining_process_manager, new_tx_queue, broadcast_queue, new_block_event, chain_manager, incoming_blocks_queue):
     global RPC_CONTEXT
     RPC_CONTEXT = {
         'utxos': utxos,
@@ -196,7 +194,8 @@ def rpcServer(host, rpcPort, utxos, mempool, mining_process_manager, new_tx_queu
         'new_tx_queue': new_tx_queue,
         'broadcast_queue': broadcast_queue,
         'new_block_event': new_block_event,
-        'chain_manager': chain_manager, 
+        'chain_manager': chain_manager,
+        'incoming_blocks_queue': incoming_blocks_queue 
     }
     
     server = ThreadedTCPServer((host, rpcPort), TCPRequestHandler)
