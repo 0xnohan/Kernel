@@ -100,6 +100,28 @@ class Validator:
             print(f"Block validation failed (Block {block.Height}): First tx is not a coinbase")
             return False
         
+        try:
+            coinbase_tx = block.Txs[0]
+            coinbase_script_sig = coinbase_tx.tx_ins[0].script_sig
+            
+            if not coinbase_script_sig.cmds:
+                print(f"Block validation failed (Block {block.Height}): Coinbase scriptSig is empty")
+                return False
+            
+            height_bytes = coinbase_script_sig.cmds[0]
+            if not isinstance(height_bytes, bytes):
+                print(f"Block validation failed (Block {block.Height}): Coinbase scriptSig first element is not data (height).")
+                return False
+            decoded_height = little_endian_to_int(height_bytes)
+            
+            if decoded_height != block.Height:
+                print(f"Block validation failed (Block {block.Height}): check failed. Block height is {block.Height}, but coinbase scriptSig starts with {decoded_height}")
+                return False
+
+        except Exception as e:
+            print(f"Block validation failed (Block {block.Height}): Error during check: {e}")
+            return False
+
         for i, tx in enumerate(block.Txs[1:]):
             if tx.is_coinbase():
                 print(f"Block validation failed (Block {block.Height}): Found coinbase tx at index {i+1}")
