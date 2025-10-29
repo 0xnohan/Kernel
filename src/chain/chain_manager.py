@@ -1,6 +1,6 @@
+from threading import RLock
 
 from src.core.transaction import Tx
-import time
 from src.database.utxo_manager import UTXOManager
 from src.chain.mempool import Mempool
 from src.chain.validator import Validator
@@ -13,9 +13,27 @@ class ChainManager:
         self.mempool = mempool_db
         self.txindex = txindex_db
         self.new_block_event = new_block_event
+
         self.validator = Validator(self.utxos, self.mempool)
         self.utxo_manager = UTXOManager(self.utxos)
         self.mempool_manager = Mempool(self.mempool, self.utxos)
+        self.mempool_lock = RLock()
+
+    
+    def add_transaction_to_mempool(self, tx):
+        tx_id = tx.id()
+        with self.mempool_lock:
+            if tx_id in self.mempool:
+                print(f"Tx {tx_id[:10]}... already in mempool, rejected...")
+                return False
+
+            if not self.validator.validate_transaction(tx, is_in_block=False):
+                print(f"Tx {tx_id[:10]}... validation failed, rejected...")
+                return False
+            
+            print(f"Tx {tx_id[:10]}... accepted in mempool")
+            self.mempool[tx_id] = tx
+            return True
 
     def process_new_block(self, block_obj):
         block_hash = block_obj.BlockHeader.generateBlockHash()
@@ -139,21 +157,33 @@ class ChainManager:
                     continue 
 
                 prev_tx_block_dict = self.find_tx_block_in_chain(prev_tx_hash)
-                if prev_tx_block_dict:
-                    for tx_dict in prev_tx_block_dict['Txs']:
-                        if tx_dict['TxId'] == prev_tx_hash:
-                            self.utxos[prev_tx_hash] = Tx.to_obj(tx_dict)
-                            break
-                else:
-                    print(f"WARN: Could not find parent tx {prev_tx_hash[:10]}... during disconnect.")
+
+                if not prev_tx_block_dict:
+                    print(f"Corruption detected, txindex doesn't find {prev_tx_hash}")
+                    raise Exception(f"WARN: Could not find parent tx {prev_tx_hash[:10]}... during disconnect.")
+                
+                found_parent_tx = False
+
+                for tx_dict in prev_tx_block_dict['Txs']:
+                    if tx_dict['TxId'] == prev_tx_hash:
+                        self.utxos[prev_tx_hash] = Tx.to_obj(tx_dict)
+                        found_parent_tx = True
+                        break
+
+                if not found_parent_tx:
+                    print(f"Corruption detected, block {prev_tx_block_dict['Height']} found but doesn't have tx {prev_tx_hash}")
+                    raise Exception(f"Corruption of index: tx {prev_tx_hash} not find in this block")
 
         for tx in block_obj.Txs[1:]:
             tx_id = tx.id()
             if tx_id not in self.mempool:
-                if self.validator.validate_transaction(tx):
-                    self.mempool[tx_id] = tx
+                if hasattr(self, 'add_transaction_to_mempool'):
+                     self.add_transaction_to_mempool(tx)
                 else:
-                    print(f"Orphaned tx {tx_id[:10]}... is no longer valid. Discarding.")
+                    if self.validator.validate_transaction(tx):
+                        self.mempool[tx_id] = tx
+                    else:
+                        print(f"Orphaned tx {tx_id[:10]}... is no longer valid. Discarding.")
                     
         print(f"Disconnected block {block_obj.Height}. UTXOs restored, txs returned to mempool.")
         return True
@@ -162,27 +192,14 @@ class ChainManager:
         block_hash = self.txindex.get(tx_id)
         if not block_hash:
             print(f"WARN: Transaction {tx_id[:10]}... not found in txindex")
-            return self.find_tx_block_in_chain_slow(tx_id)
+            return None
         
         block = self.db.get_block(block_hash)
         if not block:
             print(f"FATAL: txindex points to block {block_hash} for tx {tx_id}, but block is not in DB")
             return None
-            
+        
         return block
-    
-    def find_tx_block_in_chain_slow(self, tx_id):
-        for block in self.db.read():
-            for tx in block.get("Txs", []):
-                if tx.get("TxId") == tx_id:
-                    return block
-        for block_hash in self.db.db.keys():
-            block = self.db.get_block(block_hash)
-            if not block: continue
-            for tx in block.get("Txs", []):
-                if tx.get("TxId") == tx_id:
-                    return block
-        return None
 
     def block_to_dict(self, block):
         block.BlockHeader.to_hex()

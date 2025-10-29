@@ -10,7 +10,7 @@ from src.utils.serialization import encode_base58, decode_base58
 app = Flask(__name__)
 CORS(app)
 MAIN_PREFIX = b'\x6c'
-COIN = 100000000
+KOR = 100000000
 MEMPOOL = {}
 UTXOS = {}
 BLOCKCHAIN_CACHE = {
@@ -86,13 +86,13 @@ def format_transaction_details(tx, block, blocks):
             h160_bytes = bytes.fromhex(out['script_pubkey']['cmds'][2])
             recipient_address = encode_base58_checksum(h160_bytes)
             amount = out.get('amount', 0)
-            to_addresses_details.append({"address": recipient_address, "amount": amount / COIN})
+            to_addresses_details.append({"address": recipient_address, "amount": amount / KOR})
 
             if recipient_address not in from_addresses:
                 sent_value += amount
 
         except (IndexError, KeyError, ValueError, TypeError):
-            to_addresses_details.append({"address": "Error", "amount": out.get('amount', 0) / COIN})
+            to_addresses_details.append({"address": "Error", "amount": out.get('amount', 0) / KOR})
 
     if "Coinbase" in from_addresses:
         fee = 0
@@ -107,8 +107,8 @@ def format_transaction_details(tx, block, blocks):
         "block_hash": block.get("BlockHeader", {}).get("blockHash"),
         "from": list(from_addresses),
         "to": [item['address'] for item in to_addresses_details], 
-        "value": value / COIN,
-        "fee": fee / COIN,
+        "value": value / KOR,
+        "fee": fee / KOR,
         "status": "success"
     }
 
@@ -241,7 +241,9 @@ def get_block_details(block_hash):
                 "nonce": header.get("nonce"),
                 "timestamp": datetime.fromtimestamp(header.get('timestamp', 0), timezone.utc).isoformat(),
                 "transactions": formatted_txs,
-                "reward": 50
+                "reward": 50,
+                "version": header.get("version"),
+                "bits": header.get("bits")
             })
             
     return jsonify({"error": "Bloc not found"}), 404
@@ -290,7 +292,7 @@ def get_transaction_details(tx_hash):
                                 spent_output = prev_tx_data['tx_outs'][inp.get("prev_index")]
                                 h160_bytes = bytes.fromhex(spent_output['script_pubkey']['cmds'][2])
                                 address = encode_base58_checksum(h160_bytes)
-                                value = spent_output.get('amount', 0) / COIN
+                                value = spent_output.get('amount', 0) / KOR
                                 detailed_inputs.append({"address": address, "value": value})
                             except (IndexError, KeyError, TypeError, ValueError): pass
 
@@ -299,7 +301,7 @@ def get_transaction_details(tx_hash):
                     try:
                         h160_bytes = bytes.fromhex(out['script_pubkey']['cmds'][2])
                         address = encode_base58_checksum(h160_bytes)
-                        value = out.get('amount', 0) / COIN
+                        value = out.get('amount', 0) / KOR
                         detailed_outputs.append({"address": address, "value": value})
                     except (IndexError, KeyError, TypeError, ValueError): pass
                 
@@ -323,8 +325,8 @@ def get_address_details(public_address):
     if not blocks_db:
         return jsonify({"address": public_address, "transactions": [], "error": "Blockchain is empty"}), 404
     
-    total_received_kernel = 0
-    total_sent_kernel = 0
+    total_received_kores = 0
+    total_sent_kores = 0
     address_transactions = []
     processed_tx_ids = set()
 
@@ -363,7 +365,7 @@ def get_address_details(public_address):
                     h160_bytes = bytes.fromhex(tx_out['script_pubkey']['cmds'][2])
                     receiver_address = encode_base58_checksum(h160_bytes)
                     amount = tx_out.get('amount', 0)
-                    to_addresses_details.append({"address": receiver_address, "amount": amount / COIN})
+                    to_addresses_details.append({"address": receiver_address, "amount": amount / KOR})
                     if h160_bytes == target_h160:
                         is_receiver = True
                         value_in += amount
@@ -377,8 +379,8 @@ def get_address_details(public_address):
                     if net_effect < 0 : direction = "OUT"
                     else: direction = "IN" 
                 
-                if is_sender: total_sent_kernel += value_out
-                if is_receiver: total_received_kernel += value_in
+                if is_sender: total_sent_kores += value_out
+                if is_receiver: total_received_kores += value_in
 
                 address_transactions.append({
                     "hash": tx_id,
@@ -388,17 +390,17 @@ def get_address_details(public_address):
                     "from": list(from_addresses),
                     "to": to_addresses_details,
                     "direction": direction,
-                    "value": abs(net_effect) / COIN
+                    "value": abs(net_effect) / KOR
                 })
                 processed_tx_ids.add(tx_id)
 
-    current_balance_kernel = total_received_kernel - total_sent_kernel
+    current_balance_kores = total_received_kores - total_sent_kores
 
     return jsonify({
         "address": public_address,
-        "total_received": total_received_kernel / COIN,
-        "total_sent": total_sent_kernel / COIN,
-        "current_balance": current_balance_kernel / COIN,
+        "total_received": total_received_kores / KOR,
+        "total_sent": total_sent_kores / KOR,
+        "current_balance": current_balance_kores / KOR,
         "transaction_count": len(address_transactions),
         "transactions": sorted(address_transactions, key=lambda x: x['block_height'], reverse=True)
     })
@@ -413,7 +415,7 @@ def get_mempool():
             total_value = sum(out.amount for out in tx_obj.tx_outs)
             formatted_txs.append({
                 "hash": tx_id,
-                "value": total_value / COIN,
+                "value": total_value / KOR,
                 "received_time": getattr(tx_obj, 'received_time', time.time()) 
             })
         except Exception as e:

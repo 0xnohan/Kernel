@@ -6,7 +6,7 @@ from src.scripts.script import Script
 from src.utils.serialization import int_to_little_endian, bytes_needed, decode_base58
 from src.utils.config_loader import get_miner_wallet
 
-from src.chain.params import INITIAL_REWARD_KERNELS, HALVING_INTERVAL, REDUCTION_FACTOR
+from src.chain.params import INITIAL_REWARD_KOR, HALVING_INTERVAL, REDUCTION_FACTOR
 
 
 def load_miner_info():
@@ -29,7 +29,7 @@ class CoinbaseTx:
 
     def calculate_reward(self):
         reduction_periods = self.BlockHeight // HALVING_INTERVAL
-        reward_float = INITIAL_REWARD_KERNELS * (REDUCTION_FACTOR ** reduction_periods)
+        reward_float = INITIAL_REWARD_KOR * (REDUCTION_FACTOR ** reduction_periods)
         return max(0, int(reward_float))
 
     def CoinbaseTransaction(self, fees):

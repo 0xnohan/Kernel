@@ -197,7 +197,7 @@ def main():
                 print("\nSelect a sender wallet:")
                 for i, wallet in enumerate(wallets):
                     balance = wallet.get('balance', 0.0)
-                    print(f"  {i + 1} - {wallet.get('WalletName')} ({wallet.get('PublicAddress')}) - Balance: {balance:.8f} KNL")
+                    print(f"  {i + 1} - {wallet.get('WalletName')} ({wallet.get('PublicAddress')}) - Balance: {balance:.8f} KOR")
                     fee_fast = FEE_RATE_FAST
                     fee_normal = FEE_RATE_NORMAL
                     fee_slow = FEE_RATE_SLOW
@@ -208,11 +208,11 @@ def main():
                         from_addr = wallets[wallet_choice]['PublicAddress']
                         print(f"\nSender: {from_addr}")
                         to_addr = input("Recipient address: ")
-                        amount = input("Amount in KNL: ")
+                        amount = input("Amount in KOR: ") 
                         print("\nSelect transaction fee rate:")
-                        print(f"  1 - Fast ({fee_fast} kernels/byte)")
-                        print(f"  2 - Normal ({fee_normal} kernels/byte)")
-                        print(f"  3 - Slow ({fee_slow} kernels/byte)")
+                        print(f"  1 - Fast ({fee_fast} kores/byte)")
+                        print(f"  2 - Normal ({fee_normal} kores/byte)")
+                        print(f"  3 - Slow ({fee_slow} kores/byte)")
                         fee_choice = input(">> ")
                         fee_map = {'1': fee_fast, '2': fee_normal, '3': fee_slow}
                         fee_rate = fee_map.get(fee_choice, FEE_RATE_NORMAL) 

@@ -1,5 +1,5 @@
 from src.utils.crypto_hash import hash160
-from src.utils.elleptic_curve import Sha256Point, Signature
+from secp256k1 import PublicKey
 
 
 def op_dup(stack):
@@ -51,24 +51,27 @@ def op_equalverify(stack):
 
 
 def op_checksig(stack, z):
-    if len(stack) < 1:
+    if len(stack) < 2:
         return False
-
-    sec_pubkey = stack.pop()
-    der_signature = stack.pop()[:-1]
 
     try:
-        point = Sha256Point.parse(sec_pubkey)
-        sig = Signature.parse(der_signature)
+        sec_pubkey = stack.pop()
+        der_signature_with_flag = stack.pop()
+        der_signature = der_signature_with_flag[:-1]
+        z_bytes = z.to_bytes(32, 'big')
+        pub_key_obj = PublicKey(sec_pubkey, raw=True)
+        raw_sig_obj = pub_key_obj.ecdsa_deserialize(der_signature)
+        verified = pub_key_obj.ecdsa_verify(z_bytes, raw_sig_obj)
     except Exception as e:
-        return False
-
-    if point.verify(z, sig):
+        print(f"Error signature verification : {e}")
+        verified = False
+    
+    if verified:
         stack.append(1)
-        return True
     else:
         stack.append(0)
-        return False
+        
+    return verified
 
 
 OP_CODE_FUNCTION = {118: op_dup, 136: op_equalverify, 169: op_hash160, 172: op_checksig}

@@ -1,3 +1,5 @@
+import time
+
 from src.utils.serialization import merkle_root
 from src.core.transaction import Tx
 from src.utils.crypto_hash import hash256
@@ -26,10 +28,6 @@ class Validator:
             prev_tx_hex = tx_in.prev_tx.hex()
             
             if not is_in_block:
-                if tx_id in self.mempool:
-                    print(f"Validation Error (tx: {tx_id}): Transaction already in mempool")
-                    return False
-                
                 for mempool_tx in self.mempool.values():
                     for mempool_tx_in in mempool_tx.tx_ins:
                         if mempool_tx_in.prev_tx == tx_in.prev_tx and mempool_tx_in.prev_index == tx_in.prev_index:
@@ -72,8 +70,26 @@ class Validator:
         if prev_hash != '00' * 32 and not db.get_index(prev_hash):
             print(f"Header validation failed: Previous hash {prev_hash[:10]}... is unknown.")
             return False
+        
+        MAX_FUTURE_TIME_SECONDS = 2 * 60 * 60 
+        current_node_time = int(time.time())
+        if block_header.timestamp > (current_node_time + MAX_FUTURE_TIME_SECONDS):
+            print(f"Header validation failed: Block timestamp ({block_header.timestamp}) is too far in the future")
+            return False
+        
+        if prev_hash != '00' * 32:
+            parent_block = db.get_block(prev_hash)
+            if not parent_block:
+                print(f"Header validation failed: Could not retrieve parent block {prev_hash[:10]} for timestamp check")
+                return False
             
-        # TODO: Add timestamp check (e.g., not after 2 hours in future)
+            parent_timestamp = parent_block['BlockHeader']['timestamp']
+            
+            if block_header.timestamp < parent_timestamp: #Change for "<=" but need to change the initial genesis difficulty
+                #INITIAL_TARGET = 0x000000FFFFFF000000000000000000000000000000000000000000000000 more difficult
+                print(f"Header validation failed: Block timestamp ({block_header.timestamp}) is not after parent timestamp ({parent_timestamp})")
+                return False
+            # TODO: Replace paren_timestamp with a real Median Time Past, we keep this for now
         return True
 
     def validate_block_body(self, block, db):
@@ -85,6 +101,28 @@ class Validator:
             print(f"Block validation failed (Block {block.Height}): First tx is not a coinbase")
             return False
         
+        try:
+            coinbase_tx = block.Txs[0]
+            coinbase_script_sig = coinbase_tx.tx_ins[0].script_sig
+            
+            if not coinbase_script_sig.cmds:
+                print(f"Block validation failed (Block {block.Height}): Coinbase scriptSig is empty")
+                return False
+            
+            height_bytes = coinbase_script_sig.cmds[0]
+            if not isinstance(height_bytes, bytes):
+                print(f"Block validation failed (Block {block.Height}): Coinbase scriptSig first element is not data (height).")
+                return False
+            decoded_height = little_endian_to_int(height_bytes)
+            
+            if decoded_height != block.Height:
+                print(f"Block validation failed (Block {block.Height}): check failed. Block height is {block.Height}, but coinbase scriptSig starts with {decoded_height}")
+                return False
+
+        except Exception as e:
+            print(f"Block validation failed (Block {block.Height}): Error during check: {e}")
+            return False
+
         for i, tx in enumerate(block.Txs[1:]):
             if tx.is_coinbase():
                 print(f"Block validation failed (Block {block.Height}): Found coinbase tx at index {i+1}")
