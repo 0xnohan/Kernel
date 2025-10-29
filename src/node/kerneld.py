@@ -65,6 +65,28 @@ def handle_new_transactions(new_tx_queue, sync_manager, chain_manager):
             logger.error(f"Error in thread {e}")
 
 
+def reload_mempool(mempool_db, chain_manager):
+    logger.debug(f"Reloading persistent mempool. Found {len(mempool_db)} transactions.")
+    tx_ids_to_remove = []
+
+    for tx_id, tx in mempool_db.items():
+        if not chain_manager.validator.validate_transaction(tx, is_in_block=False):
+            logger.warning(
+                f"Removing invalid transaction {tx_id} from persistent mempool (already mined or double-spend)"
+            )
+            tx_ids_to_remove.append(tx_id)
+        else:
+            logger.debug(f"Reloaded valid transaction {tx_id} into mempool")
+
+    for tx_id in tx_ids_to_remove:
+        try:
+            del mempool_db[tx_id]
+        except KeyError:
+            logger.warning(f"Transaction {tx_id} was already removed during validation")
+
+    logger.info(f"Mempool reloaded. Kept {len(mempool_db)} valid transactions")
+
+
 def main():
     setup_logging()
     config = load_config()
@@ -85,9 +107,6 @@ def main():
     utxos_db = UTXODB()
     mempool_db = MempoolDB()
     txindex_db = TxIndexDB()
-
-    mempool_db.clear()
-    logger.debug("Persistent mempool cleared")
 
     chain_manager = ChainManager(db, utxos_db, mempool_db, txindex_db, new_block_event)
     utxo_manager = UTXOManager(utxos_db)
@@ -146,6 +165,8 @@ def main():
         utxos_db.set_meta("last_block_hash", last_hash_chain)
         utxos_db.commit()
         logger.info(f"UTXO set rebuilt. {len(utxos_db)} UTXOs found")
+
+    reload_mempool(mempool_db, chain_manager)
 
     sync_manager = SyncManager(
         host,
