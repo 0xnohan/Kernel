@@ -216,9 +216,10 @@ class SyncManager:
                     elif command == Pong.command.decode():
                         pong_msg = Pong.parse(envelope.stream())
 
-                except (RuntimeError, ValueError, IndexError) as e:
+                except (RuntimeError, ValueError, IndexError, SyntaxError) as e:
                     logger.error(
-                        f"Error message from {peer_id_str}: {e}. Discarding message and continuing"
+                        f"Failed to parse message from {peer_id_str}: {e}. Discarding message",
+                        exc_info=True
                     )
                     continue
 

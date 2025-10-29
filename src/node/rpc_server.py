@@ -131,17 +131,21 @@ class TCPRequestHandler(socketserver.BaseRequestHandler):
                     }
                 else:
                     try:
-                        block = Block.parse(BytesIO(bytes.fromhex(block_hex)))
+                        block_bytes = bytes.fromhex(block_hex)
+                        block = Block.parse(BytesIO(block_bytes))
                         incoming_blocks_queue.put(block)
                         response = {
                             "status": "success",
                             "message": f"Block {block.Height} submitted for processing",
                         }
-
+                    except (ValueError, IndexError, TypeError, SyntaxError) as e:
+                        logger.warning(f"Failed to parse submitted block: {e}")
+                        response = {
+                            "status": "error",
+                            "message": f"Invalid block format or hex: {e}",
+                        }
                     except Exception as e:
-                        import traceback
-
-                        traceback.print_exc()
+                        logger.error(f"Unexpected error in submit_block: {e}", exc_info=True)
                         response = {
                             "status": "error",
                             "message": f"Error processing block:{e}",
@@ -193,37 +197,63 @@ class TCPRequestHandler(socketserver.BaseRequestHandler):
 
             elif cmd == "send_tx":
                 try:
-                    fee_rate = params.get("fee_rate", FEE_RATE_NORMAL)
+                    if not all(k in params for k in ["from", "to", "amount"]):
+                        response = {
+                            "status": "error",
+                            "message": "Missing required parameters (from, to, amount)",
+                        }
+                        self.request.sendall(json.dumps(response).encode("utf-8"))
+                        
+
+                    from_addr = params["from"]
+                    to_addr = params["to"]
+                    amount_float = float(params["amount"])
+                    fee_rate = int(params.get("fee_rate", FEE_RATE_NORMAL)) 
+
                     send_handler = Send(
-                        params["from"],
-                        params["to"],
-                        float(params["amount"]),
-                        int(fee_rate),
+                        from_addr,
+                        to_addr,
+                        amount_float,
+                        fee_rate,
                         utxos,
                         mempool,
                     )
+                    
                     tx = send_handler.prepareTransaction()
-                    if tx and new_tx_queue:
+
+                    if not tx:
+                        response = {
+                            "status": "error",
+                            "message": "Failed to create transaction. Check balance, addresses, and UTXO availability",
+                        }
+                    elif not new_tx_queue:
+                         response = {
+                            "status": "error",
+                            "message": "Cannot broadcast transaction, daemon queue not available",
+                        }
+                    else:
                         new_tx_queue.put(tx)
                         response = {
                             "status": "success",
                             "message": "Transaction sent to daemon for processing",
                             "txid": tx.id(),
                         }
-                    elif not tx:
-                        response = {
-                            "status": "error",
-                            "message": "Failed to create transaction. Check balance and addresses.",
-                        }
-                    else:
-                        response = {
-                            "status": "error",
-                            "message": "Cannot broadcast transaction, daemon queue not available.",
-                        }
-                except Exception as e:
+
+                except (ValueError, TypeError):
                     response = {
                         "status": "error",
-                        "message": f"Error sending transaction: {e}",
+                        "message": "Invalid amount or fee_rate. Must be a number",
+                    }
+                except KeyError as e:
+                     response = {
+                        "status": "error",
+                        "message": f"Missing parameter: {e}",
+                    }
+                except Exception as e:
+                    logger.error(f"Unexpected error in send_tx: {e}", exc_info=True)
+                    response = {
+                        "status": "error",
+                        "message": f"Internal error sending transaction: {e}",
                     }
 
             elif cmd == "shutdown":
