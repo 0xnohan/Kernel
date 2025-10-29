@@ -6,8 +6,6 @@ from threading import Lock, RLock, Thread
 from src.chain.mempool import Mempool
 from src.chain.params import MAX_HEADERS_TO_SEND, PING_INTERVAL
 from src.chain.validator import Validator, check_pow
-from src.core.block import Block
-from src.core.transaction import Tx
 from src.database.db_manager import BlockchainDB
 from src.database.utxo_manager import UTXOManager
 from src.net.connection import Node
@@ -38,7 +36,6 @@ class SyncManager:
         host,
         port,
         new_block_event=None,
-        secondaryChain=None,
         mempool=None,
         utxos=None,
         chain_manager=None,
@@ -47,7 +44,6 @@ class SyncManager:
         self.host = host
         self.port = port
         self.new_block_event = new_block_event
-        self.secondaryChain = secondaryChain
         self.mempool = mempool
         self.utxos = utxos
         self.chain_manager = chain_manager
@@ -71,7 +67,6 @@ class SyncManager:
     def send_message(self, sock, message):
         envelope = NetworkEnvelope(message.command, message.serialize())
         sock.sendall(envelope.serialize())
-        # print(f"-> Sent {message.command.decode()} to {sock.getpeername()}")
         pass
 
     def connect_to_peer(self, host, port):
@@ -220,7 +215,6 @@ class SyncManager:
 
                     elif command == Pong.command.decode():
                         pong_msg = Pong.parse(envelope.stream())
-                        # print(f"Received pong from {peer_id_str} with nonce {pong_msg.nonce}")
 
                 except (RuntimeError, ValueError, IndexError) as e:
                     logger.error(
@@ -330,8 +324,6 @@ class SyncManager:
                         f"Header validation failed: Discontinuity in peer's batch"
                     )
                     return
-                logger.error("Header validation failed: Discontinuity in chain")
-                return
 
             if not check_pow(header):
                 logger.error("Header validation failed: Invalid Proof of Work")
