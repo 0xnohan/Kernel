@@ -1,8 +1,8 @@
 from math import log
+
 from src.utils.crypto_hash import hash256
 
 BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-
 
 
 def bytes_needed(n):
@@ -20,6 +20,7 @@ def little_endian_to_int(b):
     """takes a byte sequence and returns an integer"""
     return int.from_bytes(b, "little")
 
+
 def encode_base58(s):
     # determine how many 0 bytes (b'\x00') s starts with
     count = 0
@@ -29,9 +30,9 @@ def encode_base58(s):
         else:
             break
     # convert to big endian integer
-    num = int.from_bytes(s, 'big')
-    prefix = 'k' * count #test
-    result = ''
+    num = int.from_bytes(s, "big")
+    prefix = "k" * count  # test
+    result = ""
     while num > 0:
         num, mod = divmod(num, 58)
         result = BASE58_ALPHABET[mod] + result
@@ -53,21 +54,23 @@ def decode_base58(s):
 
     return combined[1:-4]
 
+
 def read_varint(s):
-    '''read_varint reads a variable integer from a stream'''
+    """read_varint reads a variable integer from a stream"""
     i = s.read(1)[0]
-    if i == 0xfd:
+    if i == 0xFD:
         # 0xfd means the next two bytes are the number
         return little_endian_to_int(s.read(2))
-    elif i == 0xfe:
+    elif i == 0xFE:
         # 0xfe means the next four bytes are the number
         return little_endian_to_int(s.read(4))
-    elif i == 0xff:
+    elif i == 0xFF:
         # 0xff means the next eight bytes are the number
         return little_endian_to_int(s.read(8))
     else:
         # anything else is just the integer
         return i
+
 
 def encode_varint(i):
     """encodes an integer as a varint"""
@@ -112,8 +115,8 @@ def target_to_bits(target):
     raw_bytes = target.to_bytes(32, "big")
     raw_bytes = raw_bytes.lstrip(b"\x00")  # <1>
     if not raw_bytes:
-        return b'\x00\x00\x00\x00'
-    
+        return b"\x00\x00\x00\x00"
+
     if raw_bytes[0] > 0x7F:  # <2>
         exponent = len(raw_bytes) + 1
         coefficient = b"\x00" + raw_bytes[:2]
@@ -121,11 +124,12 @@ def target_to_bits(target):
         exponent = len(raw_bytes)  # <3>
         coefficient = raw_bytes[:3]  # <4>
 
-    coefficient_padded = coefficient.ljust(3, b'\x00')
+    coefficient_padded = coefficient.ljust(3, b"\x00")
     new_bits = coefficient_padded[::-1] + bytes([exponent])
     return new_bits
+
 
 def bits_to_target(bits):
     exponent = bits[-1]
     coefficient = little_endian_to_int(bits[:-1])
-    return coefficient * 256**(exponent - 3)
+    return coefficient * 256 ** (exponent - 3)
