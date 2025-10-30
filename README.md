@@ -94,7 +94,7 @@ Before getting started, ensure you have the following installed:
     ```bash
     python KernelCLI.py # in each folder
     
-  - Create a new wallet(4) and change miner address in settings(5) to the name of the new wallet 
+  - Create a new wallet and change miner address in settings to the name of the new wallet 
 
 ## Versions
 
