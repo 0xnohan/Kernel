@@ -309,20 +309,19 @@ class SyncManager:
                 logger.info(f"Sending {len(headers_to_send)} headers to peer")
             else:
                 logger.info("Peer is up-to-date")
-            
+
             headers_msg = Headers(headers_to_send)
             self.send_message(conn, headers_msg)
-        
+
         elif getheaders_msg.start_block.hex() == "00" * 32 and not all_blocks:
-             logger.info("Peer asked from genesis, we have no blocks")
-             headers_msg = Headers([])
-             self.send_message(conn, headers_msg)
-        
+            logger.info("Peer asked from genesis, we have no blocks")
+            headers_msg = Headers([])
+            self.send_message(conn, headers_msg)
+
         else:
             logger.warning(
                 f"GetHeaders start_block {getheaders_msg.start_block.hex()} not found in main chain"
             )
-    
 
     def handle_headers(self, conn, headers_msg):
         if not headers_msg.headers:
