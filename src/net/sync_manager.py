@@ -409,9 +409,11 @@ class SyncManager:
         try:
             tx_was_added = self.chain_manager.add_transaction_to_mempool(tx_obj)
             if tx_was_added:
-                logger.info(f"Tx {tx_id} added, broadcasting...")
-                self.broadcast_tx(tx_obj, origin_peer_socket)
-
+                if self.is_syncing:
+                    logger.info(f"Tx {tx_id} added to mempool (IBD in progress, not broadcasting)")
+                else:
+                    logger.info(f"Tx {tx_id} added, broadcasting...")
+                    self.broadcast_tx(tx_obj, origin_peer_socket)
         except Exception as e:
             logger.error(f"Error with tx {tx_id}: {e}")
 
@@ -447,12 +449,18 @@ class SyncManager:
                     pass
 
     def broadcast_tx(self, tx_obj, origin_peer_socket=None):
+        if self.is_syncing:
+            logger.info(f"Cannot broadcast tx for {tx_obj.id()}: IBD in progress...")
+            return
         tx_hash = bytes.fromhex(tx_obj.id())
         inv_msg = Inv(items=[(INV_TYPE_TX, tx_hash)])
         logger.info(f"Broadcasting transaction {tx_obj.id()}")
         self.broadcast_inv(inv_msg, origin_peer_socket)
 
     def broadcast_block(self, block_obj, origin_peer_socket=None):
+        if self.is_syncing:
+            logger.info(f"Cannot broadcast block {block_obj.Height}: IBD in progress...")
+            return
         block_hash = bytes.fromhex(block_obj.BlockHeader.generateBlockHash())
         inv_msg = Inv(items=[(INV_TYPE_BLOCK, block_hash)])
         logger.info(f"Broadcasting block {block_obj.Height}")
