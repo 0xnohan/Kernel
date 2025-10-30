@@ -4,7 +4,7 @@ import time
 from threading import Lock, RLock, Thread
 
 from src.chain.mempool import Mempool
-from src.chain.params import MAX_HEADERS_TO_SEND, PING_INTERVAL
+from src.chain.params import MAX_HEADERS_TO_SEND, PING_INTERVAL, MAX_PEERS
 from src.chain.validator import Validator, check_pow
 from src.database.db_manager import BlockchainDB
 from src.database.utxo_manager import UTXOManager
@@ -74,6 +74,12 @@ class SyncManager:
         with self.peers_lock:
             if peer_id in self.peers or (self.host == host and self.port == port):
                 return
+            
+            if len(self.peers) >= MAX_PEERS:
+                logger.debug(
+                    f"Cannot connect to peer {peer_id}: max peers ({MAX_PEERS}) reached"
+                )
+                return
         try:
             peer_node = Node(host, port)
             client_socket = peer_node.connect(self.port)
@@ -128,6 +134,16 @@ class SyncManager:
         logger.info(f"Handling new connection from {peer_id_str}")
 
         with self.peers_lock:
+            if len(self.peers) >= MAX_PEERS:
+                logger.warning(
+                    f"Refusing connection from {peer_id_str}: max peers ({MAX_PEERS}) reached"
+                )
+                try:
+                    conn.close()
+                except Exception as e:
+                    logger.debug(f"Error closing refused connection: {e}")
+                return  
+            
             self.peers[peer_id_str] = conn
 
         try:
