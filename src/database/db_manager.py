@@ -8,7 +8,8 @@ import time
 
 from sqlitedict import SqliteDict
 
-from src.core.transaction import Tx
+from src.core.transaction import Tx, TxOut
+from src.scripts.script import Script
 from src.utils.serialization import bits_to_target
 
 
@@ -140,6 +141,9 @@ class UTXODB(BaseDB):
         self.db_file = os.path.join(self.basepath, "utxos.sqlite")
         self.db = SqliteDict(self.db_file, autocommit=False)
         self.meta_key_prefix = "_meta_"
+        self.TxOut = TxOut
+        self.Script = Script
+
 
     def get_meta(self, key):
         return self.db.get(f"{self.meta_key_prefix}{key}")
@@ -157,23 +161,23 @@ class UTXODB(BaseDB):
         for k in keys_to_delete:
             del self.db[k]
 
-    def __setitem__(self, tx_id_hex, tx_obj):
-        self.db[tx_id_hex] = tx_obj.to_dict()
+    def __setitem__(self, key, tx_out_obj):
+        self.db[key] = tx_out_obj.to_dict()
 
-    def __getitem__(self, tx_id_hex):
-        tx_dict = self.db.get(tx_id_hex)
-        if tx_dict:
-            return Tx.to_obj(tx_dict)
-        raise KeyError(f"Tx {tx_id_hex} not in UTXO set")
+    def __getitem__(self, key):
+        tx_out_dict = self.db.get(key)
+        if tx_out_dict:
+            return self.TxOut.from_dict(tx_out_dict)
+        raise KeyError(f"UTXO key {key} not in set")
 
-    def __delitem__(self, tx_id_hex):
-        if tx_id_hex in self.db:
-            del self.db[tx_id_hex]
+    def __delitem__(self, key):
+        if key in self.db:
+            del self.db[key]
         else:
             pass
 
-    def __contains__(self, tx_id_hex):
-        return tx_id_hex in self.db
+    def __contains__(self, key):
+        return key in self.db
 
     def __len__(self):
         return len(
@@ -191,32 +195,32 @@ class UTXODB(BaseDB):
         for k in self.keys():
             yield (k, self[k])
 
-    def get(self, tx_id_hex, default=None):
+    def get(self, key, default=None):
         try:
-            return self[tx_id_hex]
+            return self[key]
         except KeyError:
             return default
 
     def get_balances(self, wallet_h160_list):
         balances = {h160.hex(): 0 for h160 in wallet_h160_list}
         wallet_h160_set = set(wallet_h160_list)
-
-        for tx_dict in self.db.values():
-            if isinstance(tx_dict, dict) and "tx_outs" in tx_dict:
-                for tx_out in tx_dict["tx_outs"]:
-                    try:
-                        pubKeyHash_hex = tx_out["script_pubkey"]["cmds"][2]
-                        pubKeyHash_bytes = bytes.fromhex(pubKeyHash_hex)
-                        if pubKeyHash_bytes in wallet_h160_set:
-                            balances[pubKeyHash_hex] += tx_out["amount"]
-                    except (
-                        AttributeError,
-                        IndexError,
-                        KeyError,
-                        TypeError,
-                        ValueError,
-                    ):
-                        continue
+        for tx_out_dict in self.db.values():
+            if not isinstance(tx_out_dict, dict) or "script_pubkey" not in tx_out_dict:
+                continue
+            
+            try:
+                pubKeyHash_hex = tx_out_dict["script_pubkey"]["cmds"][2]
+                pubKeyHash_bytes = bytes.fromhex(pubKeyHash_hex)
+                if pubKeyHash_bytes in wallet_h160_set:
+                    balances[pubKeyHash_hex] += tx_out_dict["amount"]
+            except (
+                AttributeError,
+                IndexError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ):
+                continue
         return balances
 
 

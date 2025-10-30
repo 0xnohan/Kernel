@@ -4,7 +4,8 @@ from threading import RLock
 from src.chain.mempool import Mempool
 from src.chain.validator import Validator
 from src.core.block import Block
-from src.core.transaction import Tx
+from src.core.transaction import Tx, TxOut
+from src.scripts.script import Script
 from src.database.utxo_manager import UTXOManager
 
 logger = logging.getLogger(__name__)
@@ -151,7 +152,7 @@ class ChainManager:
         ]
 
         self.utxo_manager.remove_spent_utxos(spent_outputs)
-        self.utxo_manager.add_new_utxos(block_obj.Txs)
+        self.utxo_manager.add_new_outputs_from_block(block_obj)
 
         self.mempool_manager.remove_transactions(tx_ids_in_block)
 
@@ -161,51 +162,55 @@ class ChainManager:
     def disconnect_block(self, block_obj):
         for tx in block_obj.Txs:
             tx_id_hex = tx.id()
-            if tx_id_hex in self.utxos:
-                del self.utxos[tx_id_hex]
-
             if tx_id_hex in self.txindex:
                 del self.txindex[tx_id_hex]
 
-        for tx in block_obj.Txs[1:]:
+            for i in range(len(tx.tx_outs)):
+                key = f"{tx_id_hex}_{i}"
+                if key in self.utxos:
+                    del self.utxos[key]
+
+        for tx in block_obj.Txs[1:]:  
             for tx_in in tx.tx_ins:
                 prev_tx_hash = tx_in.prev_tx.hex()
-
-                if prev_tx_hash in self.utxos:
-                    continue
-
+                prev_tx_index = tx_in.prev_index
                 prev_tx_block_dict = self.find_tx_block_in_chain(prev_tx_hash)
-
                 if not prev_tx_block_dict:
                     logger.warning(
-                        f"Corruption detected, txindex doesn't find {prev_tx_hash}"
+                        f"Corruption detected: txindex doesn't find {prev_tx_hash} during disconnect"
                     )
+                    continue
 
                 found_parent_tx = False
-
                 for tx_dict in prev_tx_block_dict["Txs"]:
                     if tx_dict["TxId"] == prev_tx_hash:
-                        self.utxos[prev_tx_hash] = Tx.to_obj(tx_dict)
-                        found_parent_tx = True
-                        break
+                        try:
+                            tx_out_dict = tx_dict["tx_outs"][prev_tx_index]
+                            if tx_out_dict is None:
+                                logger.warning(f"Tried to disconnect and restore a 'None' output for {prev_tx_hash}_{prev_tx_index}")
+                                continue
+                            tx_out_obj = TxOut.from_dict(tx_out_dict)
+                            key = f"{prev_tx_hash}_{prev_tx_index}"
+                            self.utxos[key] = tx_out_obj
+                            found_parent_tx = True
+                            break
+                        except (IndexError, KeyError) as e:
+                            logger.error(f"Failed to parse tx_out from stored block: {e}")
 
                 if not found_parent_tx:
                     logger.warning(
-                        f"Corruption detected, block {prev_tx_block_dict['Height']} found but doesn't have tx {prev_tx_hash}"
+                        f"Corruption detected: block {prev_tx_block_dict['Height']} found but doesn't have tx {prev_tx_hash}"
                     )
 
         for tx in block_obj.Txs[1:]:
             tx_id = tx.id()
             if tx_id not in self.mempool:
-                if hasattr(self, "add_transaction_to_mempool"):
-                    self.add_transaction_to_mempool(tx)
+                if self.validator.validate_transaction(tx, is_in_block=False):
+                    self.mempool[tx_id] = tx
                 else:
-                    if self.validator.validate_transaction(tx):
-                        self.mempool[tx_id] = tx
-                    else:
-                        logger.debug(
-                            f"Orphaned tx {tx_id} is no longer valid. Discarding..."
-                        )
+                    logger.debug(
+                        f"Orphaned tx {tx_id} is no longer valid. Discarding..."
+                    )
 
         logger.debug(
             f"Disconnected block {block_obj.Height}. UTXOs restored, txs returned to mempool"

@@ -7,7 +7,8 @@ class Mempool:
         for txin in tx.tx_ins:
             if txin.prev_tx in block_pending_txs:
                 return True
-            if txin.prev_tx.hex() not in self.utxos:
+            utxo_key = f"{txin.prev_tx.hex()}_{txin.prev_index}"
+            if utxo_key not in self.utxos:
                 return True
         return False
 
@@ -70,10 +71,10 @@ class Mempool:
 
         for tx_id_bytes, output_index in spent_utxos_for_block:
             tx_id_hex = tx_id_bytes.hex()
-            if tx_id_hex in self.utxos:
-                tx_obj = self.utxos[tx_id_hex]
-                if output_index < len(tx_obj.tx_outs):
-                    input_amount += tx_obj.tx_outs[output_index].amount
+            key = f"{tx_id_hex}_{output_index}"
+            if key in self.utxos:
+                tx_out_obj = self.utxos[key]
+                input_amount += tx_out_obj.amount
 
         for tx in txs_for_block:
             for tx_out in tx.tx_outs:
