@@ -31,6 +31,8 @@ class Validator:
 
             if not is_in_block:
                 for mempool_tx in self.mempool.values():
+                    if mempool_tx.id() == tx_id:
+                        continue
                     for mempool_tx_in in mempool_tx.tx_ins:
                         if (
                             mempool_tx_in.prev_tx == tx_in.prev_tx
