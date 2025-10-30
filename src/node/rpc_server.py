@@ -1,4 +1,5 @@
 import json
+import time
 import logging
 import socketserver
 from io import BytesIO
@@ -7,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 from src.chain.difficulty import calculate_new_bits
 from src.chain.mempool import Mempool
-from src.chain.params import FEE_RATE_NORMAL
+from src.chain.params import FEE_RATE_NORMAL, KOR
 from src.chain.validator import Validator
 from src.core.block import Block
 from src.core.coinbase_tx import CoinbaseTx
@@ -255,6 +256,53 @@ class TCPRequestHandler(socketserver.BaseRequestHandler):
                     response = {
                         "status": "error",
                         "message": f"Internal error sending transaction: {e}",
+                    }
+
+            elif cmd == "get_mempool":
+                try:
+                    formatted_txs = []
+                    current_mempool = dict(mempool)
+                    for tx_id, tx_obj in current_mempool.items():
+                        total_value = sum(out.amount for out in tx_obj.tx_outs)
+                        formatted_txs.append(
+                            {
+                                "hash": tx_id,
+                                "value": total_value / KOR,
+                                "fee": getattr(tx_obj, "fee", 0),
+                                "received_time": getattr(
+                                    tx_obj, "receivedTime", time.time()
+                                ),
+                            }
+                        )
+                    response = {"status": "success", "mempool": formatted_txs}
+                except Exception as e:
+                    response = {
+                        "status": "error",
+                        "message": f"Could not retrieve mempool: {e}",
+                    }
+
+            elif cmd == "getinfo":
+                try:
+                    db = BlockchainDB()
+                    last_block = db.lastBlock()
+                    height = last_block["Height"] if last_block else -1
+
+                    mempool_size = len(mempool)
+
+                    wallet_count = len(AccountDB().get_all_wallets())
+
+                    response = {
+                        "status": "success",
+                        "info": {
+                            "height": height,
+                            "mempool_size": mempool_size,
+                            "wallet_count": wallet_count,
+                        },
+                    }
+                except Exception as e:
+                    response = {
+                        "status": "error",
+                        "message": f"Could not retrieve info: {e}",
                     }
 
             elif cmd == "shutdown":
