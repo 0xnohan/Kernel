@@ -224,7 +224,7 @@ class TxOut:
         amount = little_endian_to_int(s.read(8))
         script_pubkey = Script.parse(s)
         return cls(amount, script_pubkey)
-    
+
     def to_dict(self):
         """Creates a dictionary representation of the TxOut."""
         script_pubkey_dict = self.script_pubkey.__dict__.copy()

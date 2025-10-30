@@ -2,14 +2,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from src.database.db_manager import BlockchainDB
 from src.core.transaction import Tx, TxOut
+from src.database.db_manager import BlockchainDB
 from src.scripts.script import Script
 
 
 class UTXOManager:
     def __init__(self, utxos):
-        self.utxos = utxos  
+        self.utxos = utxos
 
     def build_utxos_from_db(self):
         all_txs = {}
@@ -18,7 +18,7 @@ class UTXOManager:
         spent_outputs = set()
         for block in blocks:
             for tx in block["Txs"]:
-                if tx["tx_ins"][0]["prev_tx"] == "00" * 32:  
+                if tx["tx_ins"][0]["prev_tx"] == "00" * 32:
                     continue
                 for txin in tx["tx_ins"]:
                     spent_key = f"{txin['prev_tx']}_{txin['prev_index']}"
@@ -41,7 +41,7 @@ class UTXOManager:
         for tx in block_obj.Txs:
             tx_id = tx.id()
             for index, tx_out in enumerate(tx.tx_outs):
-                if tx_out: 
+                if tx_out:
                     self.utxos[f"{tx_id}_{index}"] = tx_out
 
     def remove_spent_utxos(self, spent_outputs):

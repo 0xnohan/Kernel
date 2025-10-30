@@ -144,7 +144,6 @@ class UTXODB(BaseDB):
         self.TxOut = TxOut
         self.Script = Script
 
-
     def get_meta(self, key):
         return self.db.get(f"{self.meta_key_prefix}{key}")
 
@@ -207,7 +206,7 @@ class UTXODB(BaseDB):
         for tx_out_dict in self.db.values():
             if not isinstance(tx_out_dict, dict) or "script_pubkey" not in tx_out_dict:
                 continue
-            
+
             try:
                 pubKeyHash_hex = tx_out_dict["script_pubkey"]["cmds"][2]
                 pubKeyHash_bytes = bytes.fromhex(pubKeyHash_hex)

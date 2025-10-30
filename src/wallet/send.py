@@ -80,7 +80,7 @@ class Send:
         for key, txout in confirmed_utxos.items():
             if key in mempool_spent_utxos:
                 continue
-                
+
             if (
                 hasattr(txout.script_pubkey, "cmds")
                 and len(txout.script_pubkey.cmds) > 2
@@ -125,7 +125,7 @@ class Send:
 
         self.isBalanceEnough = True
         return TxIns
-    
+
     def prepareTxOut(self):
         TxOuts = []
         amount_to_send_kores = self.Amount

@@ -4,7 +4,7 @@ import time
 from threading import Lock, RLock, Thread
 
 from src.chain.mempool import Mempool
-from src.chain.params import MAX_HEADERS_TO_SEND, PING_INTERVAL, MAX_PEERS
+from src.chain.params import MAX_HEADERS_TO_SEND, MAX_PEERS, PING_INTERVAL
 from src.chain.validator import Validator, check_pow
 from src.database.db_manager import BlockchainDB
 from src.database.utxo_manager import UTXOManager
@@ -74,7 +74,7 @@ class SyncManager:
         with self.peers_lock:
             if peer_id in self.peers or (self.host == host and self.port == port):
                 return
-            
+
             if len(self.peers) >= MAX_PEERS:
                 logger.debug(
                     f"Cannot connect to peer {peer_id}: max peers ({MAX_PEERS}) reached"
@@ -142,8 +142,8 @@ class SyncManager:
                     conn.close()
                 except Exception as e:
                     logger.debug(f"Error closing refused connection: {e}")
-                return  
-            
+                return
+
             self.peers[peer_id_str] = conn
 
         try:
@@ -426,7 +426,9 @@ class SyncManager:
             tx_was_added = self.chain_manager.add_transaction_to_mempool(tx_obj)
             if tx_was_added:
                 if self.is_syncing:
-                    logger.info(f"Tx {tx_id} added to mempool (IBD in progress, not broadcasting)")
+                    logger.info(
+                        f"Tx {tx_id} added to mempool (IBD in progress, not broadcasting)"
+                    )
                 else:
                     logger.info(f"Tx {tx_id} added, broadcasting...")
                     self.broadcast_tx(tx_obj, origin_peer_socket)
@@ -475,7 +477,9 @@ class SyncManager:
 
     def broadcast_block(self, block_obj, origin_peer_socket=None):
         if self.is_syncing:
-            logger.info(f"Cannot broadcast block {block_obj.Height}: IBD in progress...")
+            logger.info(
+                f"Cannot broadcast block {block_obj.Height}: IBD in progress..."
+            )
             return
         block_hash = bytes.fromhex(block_obj.BlockHeader.generateBlockHash())
         inv_msg = Inv(items=[(INV_TYPE_BLOCK, block_hash)])

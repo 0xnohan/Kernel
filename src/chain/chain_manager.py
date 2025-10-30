@@ -4,8 +4,7 @@ from threading import RLock
 from src.chain.mempool import Mempool
 from src.chain.validator import Validator
 from src.core.block import Block
-from src.core.transaction import Tx, TxOut
-from src.scripts.script import Script
+from src.core.transaction import TxOut
 from src.database.utxo_manager import UTXOManager
 
 logger = logging.getLogger(__name__)
@@ -170,7 +169,7 @@ class ChainManager:
                 if key in self.utxos:
                     del self.utxos[key]
 
-        for tx in block_obj.Txs[1:]:  
+        for tx in block_obj.Txs[1:]:
             for tx_in in tx.tx_ins:
                 prev_tx_hash = tx_in.prev_tx.hex()
                 prev_tx_index = tx_in.prev_index
@@ -187,7 +186,9 @@ class ChainManager:
                         try:
                             tx_out_dict = tx_dict["tx_outs"][prev_tx_index]
                             if tx_out_dict is None:
-                                logger.warning(f"Tried to disconnect and restore a 'None' output for {prev_tx_hash}_{prev_tx_index}")
+                                logger.warning(
+                                    f"Tried to disconnect and restore a 'None' output for {prev_tx_hash}_{prev_tx_index}"
+                                )
                                 continue
                             tx_out_obj = TxOut.from_dict(tx_out_dict)
                             key = f"{prev_tx_hash}_{prev_tx_index}"
@@ -195,7 +196,9 @@ class ChainManager:
                             found_parent_tx = True
                             break
                         except (IndexError, KeyError) as e:
-                            logger.error(f"Failed to parse tx_out from stored block: {e}")
+                            logger.error(
+                                f"Failed to parse tx_out from stored block: {e}"
+                            )
 
                 if not found_parent_tx:
                     logger.warning(

@@ -51,10 +51,8 @@ class Validator:
                 return False
 
             output_to_spend = self.utxos.get(key)
-            if output_to_spend is None: 
-                logger.error(
-                    f"Validation Error (tx: {tx_id}): UTXO {key} is None"
-                )
+            if output_to_spend is None:
+                logger.error(f"Validation Error (tx: {tx_id}): UTXO {key} is None")
                 return False
 
             input_sum += output_to_spend.amount
@@ -68,7 +66,7 @@ class Validator:
 
         for i, tx_in in enumerate(tx.tx_ins):
             key = f"{tx_in.prev_tx.hex()}_{tx_in.prev_index}"
-            output_to_spend = self.utxos[key] 
+            output_to_spend = self.utxos[key]
 
             script_pubkey = output_to_spend.script_pubkey
             if not tx.verify_input(i, script_pubkey):
@@ -212,20 +210,20 @@ class Validator:
             for tx_in in tx.tx_ins:
                 key = f"{tx_in.prev_tx.hex()}_{tx_in.prev_index}"
                 output_to_spend = self.utxos.get(key)
-                
+
                 if not output_to_spend:
                     logger.error(
                         f"Block validation failed (Block {block.Height}): Could not find UTXO {key} for fee calculation"
                     )
                     return False
-                
+
                 input_sum += output_to_spend.amount
 
             for tx_out in tx.tx_outs:
                 output_sum += tx_out.amount
 
             total_fees += input_sum - output_sum
-            
+
         coinbase_tx = block.Txs[0]
         total_coinbase_output = sum(tx_out.amount for tx_out in coinbase_tx.tx_outs)
         expected_total_output = expected_reward + total_fees
