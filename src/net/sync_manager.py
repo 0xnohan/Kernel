@@ -4,27 +4,14 @@ import time
 from threading import Lock, RLock, Thread
 
 from src.chain.mempool import Mempool
-from src.chain.params import MAX_HEADERS_TO_SEND, PING_INTERVAL
+from src.chain.params import MAX_HEADERS_TO_SEND, MAX_PEERS, PING_INTERVAL
 from src.chain.validator import Validator, check_pow
 from src.database.db_manager import BlockchainDB
 from src.database.utxo_manager import UTXOManager
 from src.net.connection import Node
-from src.net.messages import (
-    INV_TYPE_BLOCK,
-    INV_TYPE_TX,
-    Addr,
-    Block,
-    GetAddr,
-    GetData,
-    GetHeaders,
-    Headers,
-    Inv,
-    Ping,
-    Pong,
-    Tx,
-    VerAck,
-    Version,
-)
+from src.net.messages import (INV_TYPE_BLOCK, INV_TYPE_TX, Addr, Block,
+                              GetAddr, GetData, GetHeaders, Headers, Inv, Ping,
+                              Pong, Tx, VerAck, Version)
 from src.net.protocol import NetworkEnvelope
 
 logger = logging.getLogger(__name__)
@@ -73,6 +60,12 @@ class SyncManager:
         peer_id = f"{host}:{port}"
         with self.peers_lock:
             if peer_id in self.peers or (self.host == host and self.port == port):
+                return
+
+            if len(self.peers) >= MAX_PEERS:
+                logger.debug(
+                    f"Cannot connect to peer {peer_id}: max peers ({MAX_PEERS}) reached"
+                )
                 return
         try:
             peer_node = Node(host, port)
@@ -128,6 +121,16 @@ class SyncManager:
         logger.info(f"Handling new connection from {peer_id_str}")
 
         with self.peers_lock:
+            if len(self.peers) >= MAX_PEERS:
+                logger.warning(
+                    f"Refusing connection from {peer_id_str}: max peers ({MAX_PEERS}) reached"
+                )
+                try:
+                    conn.close()
+                except Exception as e:
+                    logger.debug(f"Error closing refused connection: {e}")
+                return
+
             self.peers[peer_id_str] = conn
 
         try:
@@ -143,10 +146,11 @@ class SyncManager:
                         logger.debug(
                             f"Peer {peer_id_str} version: {peer_version.version}, height: {peer_version.start_height}"
                         )
+
+                        last_block = self.db.lastBlock()
+                        our_height = last_block["Height"] if last_block else 0
                         if self.peer_handshake_status.get(peer_id_str) is None:
-                            last_block = self.db.lastBlock()
-                            start_height = last_block["Height"] if last_block else 0
-                            version_msg = Version(start_height=start_height)
+                            version_msg = Version(start_height=our_height)
                             self.send_message(conn, version_msg)
                         verack_msg = VerAck()
                         self.send_message(conn, verack_msg)
@@ -154,6 +158,16 @@ class SyncManager:
                             "version_received": True,
                             "verack_received": False,
                         }
+
+                        if peer_version.start_height > our_height:
+                            logger.info(
+                                f"Peer {peer_id_str} has a longer chain (height {peer_version.start_height} vs our {our_height}). Starting sync..."
+                            )
+                            self.start_sync(conn)
+                        else:
+                            logger.debug(
+                                f"Peer {peer_id_str} is at height {peer_version.start_height} (our {our_height}). No sync needed from this peer"
+                            )
 
                     elif command == VerAck.command.decode():
                         if (
@@ -168,7 +182,6 @@ class SyncManager:
                             logger.debug(
                                 f"Handshake complete with {peer_id_str}. Connection established."
                             )
-                            self.start_sync(conn)
 
                     elif command == GetHeaders.command.decode():
                         getheaders_msg = GetHeaders.parse(envelope.stream())
@@ -278,10 +291,24 @@ class SyncManager:
                 if len(headers_to_send) >= MAX_HEADERS_TO_SEND:
                     break
 
-        if headers_to_send:
-            logger.info(f"Sending {len(headers_to_send)} headers to peer")
+        if found_start:
+            if headers_to_send:
+                logger.info(f"Sending {len(headers_to_send)} headers to peer")
+            else:
+                logger.info("Peer is up-to-date")
+
             headers_msg = Headers(headers_to_send)
             self.send_message(conn, headers_msg)
+
+        elif getheaders_msg.start_block.hex() == "00" * 32 and not all_blocks:
+            logger.info("Peer asked from genesis, we have no blocks")
+            headers_msg = Headers([])
+            self.send_message(conn, headers_msg)
+
+        else:
+            logger.warning(
+                f"GetHeaders start_block {getheaders_msg.start_block.hex()} not found in main chain"
+            )
 
     def handle_headers(self, conn, headers_msg):
         if not headers_msg.headers:
@@ -409,9 +436,13 @@ class SyncManager:
         try:
             tx_was_added = self.chain_manager.add_transaction_to_mempool(tx_obj)
             if tx_was_added:
-                logger.info(f"Tx {tx_id} added, broadcasting...")
-                self.broadcast_tx(tx_obj, origin_peer_socket)
-
+                if self.is_syncing:
+                    logger.info(
+                        f"Tx {tx_id} added to mempool (IBD in progress, not broadcasting)"
+                    )
+                else:
+                    logger.info(f"Tx {tx_id} added, broadcasting...")
+                    self.broadcast_tx(tx_obj, origin_peer_socket)
         except Exception as e:
             logger.error(f"Error with tx {tx_id}: {e}")
 
@@ -447,12 +478,20 @@ class SyncManager:
                     pass
 
     def broadcast_tx(self, tx_obj, origin_peer_socket=None):
+        if self.is_syncing:
+            logger.info(f"Cannot broadcast tx for {tx_obj.id()}: IBD in progress...")
+            return
         tx_hash = bytes.fromhex(tx_obj.id())
         inv_msg = Inv(items=[(INV_TYPE_TX, tx_hash)])
         logger.info(f"Broadcasting transaction {tx_obj.id()}")
         self.broadcast_inv(inv_msg, origin_peer_socket)
 
     def broadcast_block(self, block_obj, origin_peer_socket=None):
+        if self.is_syncing:
+            logger.info(
+                f"Cannot broadcast block {block_obj.Height}: IBD in progress..."
+            )
+            return
         block_hash = bytes.fromhex(block_obj.BlockHeader.generateBlockHash())
         inv_msg = Inv(items=[(INV_TYPE_BLOCK, block_hash)])
         logger.info(f"Broadcasting block {block_obj.Height}")

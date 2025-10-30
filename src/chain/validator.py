@@ -6,7 +6,8 @@ from src.chain.params import MAX_BLOCK_SIZE
 from src.core.coinbase_tx import CoinbaseTx
 from src.core.transaction import Tx
 from src.utils.crypto_hash import hash256
-from src.utils.serialization import bits_to_target, little_endian_to_int, merkle_root
+from src.utils.serialization import (bits_to_target, little_endian_to_int,
+                                     merkle_root)
 
 
 def check_pow(block_header):
@@ -28,6 +29,7 @@ class Validator:
         input_sum = 0
         for tx_in in tx.tx_ins:
             prev_tx_hex = tx_in.prev_tx.hex()
+            key = f"{prev_tx_hex}_{tx_in.prev_index}"
 
             if not is_in_block:
                 for mempool_tx in self.mempool.values():
@@ -43,25 +45,15 @@ class Validator:
                             )
                             return False
 
-            if prev_tx_hex not in self.utxos:
+            if key not in self.utxos:
                 logger.error(
-                    f"Validation Error (tx: {tx_id}): Previous tx {prev_tx_hex} not in UTXO set"
+                    f"Validation Error (tx: {tx_id}): UTXO {key} not in set or already spent"
                 )
                 return False
 
-            prev_tx_obj = self.utxos.get(prev_tx_hex)
-            if tx_in.prev_index >= len(prev_tx_obj.tx_outs):
-                logger.error(
-                    f"Validation Error (tx: {tx_id}): Invalid output index for tx {prev_tx_hex}"
-                )
-                return False
-
-            output_to_spend = prev_tx_obj.tx_outs[tx_in.prev_index]
-
+            output_to_spend = self.utxos.get(key)
             if output_to_spend is None:
-                logger.error(
-                    f"Validation Error (tx: {tx_id}): Output {prev_tx_hex}:{tx_in.prev_index} already spent"
-                )
+                logger.error(f"Validation Error (tx: {tx_id}): UTXO {key} is None")
                 return False
 
             input_sum += output_to_spend.amount
@@ -74,17 +66,10 @@ class Validator:
             return False
 
         for i, tx_in in enumerate(tx.tx_ins):
-            prev_tx_obj = self.utxos[tx_in.prev_tx.hex()]
-            output_to_spend = prev_tx_obj.tx_outs[tx_in.prev_index]
-
-            if output_to_spend is None:
-                logger.error(
-                    f"Validation Error (tx: {tx_id}): Output already spent (signature check) for input {i}"
-                )
-                return False
+            key = f"{tx_in.prev_tx.hex()}_{tx_in.prev_index}"
+            output_to_spend = self.utxos[key]
 
             script_pubkey = output_to_spend.script_pubkey
-
             if not tx.verify_input(i, script_pubkey):
                 logger.error(
                     f"Validation Error (tx: {tx_id[:10]}...): Signature verification failed for input {i}."
@@ -224,24 +209,22 @@ class Validator:
             output_sum = 0
 
             for tx_in in tx.tx_ins:
-                prev_tx_obj = self.utxos.get(tx_in.prev_tx.hex())
-                if not prev_tx_obj:
+                key = f"{tx_in.prev_tx.hex()}_{tx_in.prev_index}"
+                output_to_spend = self.utxos.get(key)
+
+                if not output_to_spend:
                     logger.error(
-                        f"Block validation failed (Block {block.Height}): Could not find prev_tx {tx_in.prev_tx.hex()} for fee calculation"
+                        f"Block validation failed (Block {block.Height}): Could not find UTXO {key} for fee calculation"
                     )
                     return False
-                try:
-                    input_sum += prev_tx_obj.tx_outs[tx_in.prev_index].amount
-                except IndexError:
-                    logger.error(
-                        f"Block validation failed (Block {block.Height}): Invalid index {tx_in.prev_index} for fee calculation"
-                    )
-                    return False
+
+                input_sum += output_to_spend.amount
 
             for tx_out in tx.tx_outs:
                 output_sum += tx_out.amount
 
             total_fees += input_sum - output_sum
+
         coinbase_tx = block.Txs[0]
         total_coinbase_output = sum(tx_out.amount for tx_out in coinbase_tx.tx_outs)
         expected_total_output = expected_reward + total_fees

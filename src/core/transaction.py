@@ -1,12 +1,8 @@
 from src.scripts.script import Script
 from src.utils.crypto_hash import hash256
-from src.utils.serialization import (
-    bytes_needed,
-    encode_varint,
-    int_to_little_endian,
-    little_endian_to_int,
-    read_varint,
-)
+from src.utils.serialization import (bytes_needed, encode_varint,
+                                     int_to_little_endian,
+                                     little_endian_to_int, read_varint)
 
 SIGHASH_ALL = 1
 
@@ -224,3 +220,31 @@ class TxOut:
         amount = little_endian_to_int(s.read(8))
         script_pubkey = Script.parse(s)
         return cls(amount, script_pubkey)
+
+    def to_dict(self):
+        """Creates a dictionary representation of the TxOut."""
+        script_pubkey_dict = self.script_pubkey.__dict__.copy()
+        cmds_hex = []
+        for cmd in script_pubkey_dict["cmds"]:
+            if isinstance(cmd, bytes):
+                cmds_hex.append(cmd.hex())
+            else:
+                cmds_hex.append(cmd)
+        script_pubkey_dict["cmds"] = cmds_hex
+        return {
+            "amount": self.amount,
+            "script_pubkey": script_pubkey_dict,
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        """Creates a TxOut object from a dictionary."""
+        cmdsout = []
+        if "cmds" in data["script_pubkey"]:
+            for cmd in data["script_pubkey"]["cmds"]:
+                if isinstance(cmd, int):
+                    cmdsout.append(cmd)
+                else:
+                    cmdsout.append(bytes.fromhex(cmd))
+        script_pubkey = Script(cmdsout)
+        return cls(data["amount"], script_pubkey)

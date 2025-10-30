@@ -77,23 +77,24 @@ class Send:
 
         spendable_utxos = []
         confirmed_utxos = dict(self.utxos)
-        for tx_hex, TxObj in confirmed_utxos.items():
-            if not hasattr(TxObj, "tx_outs"):
+        for key, txout in confirmed_utxos.items():
+            if key in mempool_spent_utxos:
                 continue
-            for index, txout in enumerate(TxObj.tx_outs):
-                if txout is None:
-                    continue
 
-                utxo_id = f"{tx_hex}_{index}"
-                if (
-                    hasattr(txout.script_pubkey, "cmds")
-                    and len(txout.script_pubkey.cmds) > 2
-                    and txout.script_pubkey.cmds[2] == self.fromPubKeyHash
-                    and utxo_id not in mempool_spent_utxos
-                ):
+            if (
+                hasattr(txout.script_pubkey, "cmds")
+                and len(txout.script_pubkey.cmds) > 2
+                and txout.script_pubkey.cmds[2] == self.fromPubKeyHash
+            ):
+                try:
+                    tx_hex, index_str = key.split("_")
+                    index = int(index_str)
                     spendable_utxos.append(
                         {"tx_hex": tx_hex, "index": index, "amount": txout.amount}
                     )
+                except (ValueError, IndexError):
+                    logger.warning(f"Could not parse UTXO key {key}")
+                    continue
 
         if not spendable_utxos:
             logger.warning("No spendable UTXOs found")

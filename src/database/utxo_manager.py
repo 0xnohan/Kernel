@@ -2,8 +2,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from src.core.transaction import Tx
+from src.core.transaction import Tx, TxOut
 from src.database.db_manager import BlockchainDB
+from src.scripts.script import Script
 
 
 class UTXOManager:
@@ -14,58 +15,44 @@ class UTXOManager:
         all_txs = {}
         blocks = BlockchainDB().read()
 
-        for block in blocks:
-            for tx in block["Txs"]:
-                all_txs[tx["TxId"]] = tx
-
         spent_outputs = set()
         for block in blocks:
             for tx in block["Txs"]:
+                if tx["tx_ins"][0]["prev_tx"] == "00" * 32:
+                    continue
                 for txin in tx["tx_ins"]:
-                    if txin["prev_tx"] != "00" * 32:
-                        spent_key = f"{txin['prev_tx']}_{txin['prev_index']}"
-                        spent_outputs.add(spent_key)
+                    spent_key = f"{txin['prev_tx']}_{txin['prev_index']}"
+                    spent_outputs.add(spent_key)
 
         self.utxos.clear()
 
-        for tx_id, tx_data in all_txs.items():
-            for index, tx_out in enumerate(tx_data["tx_outs"]):
-                spend_key = f"{tx_id}_{index}"
-                if spend_key not in spent_outputs:
-                    if tx_id not in self.utxos:
-                        self.utxos[tx_id] = Tx.to_obj(tx_data)
+        for block in blocks:
+            for tx_dict in block["Txs"]:
+                tx_id = tx_dict["TxId"]
+                for index, tx_out_dict in enumerate(tx_dict["tx_outs"]):
+                    spend_key = f"{tx_id}_{index}"
+                    if spend_key not in spent_outputs:
+                        tx_out_obj = TxOut.from_dict(tx_out_dict)
+                        self.utxos[spend_key] = tx_out_obj
 
-        logging.debug(f"UTXO set rebuilt. Found {len(self.utxos)} unspent transactions")
+        logging.debug(f"UTXO set rebuilt. Found {len(self.utxos)} unspent outputs")
 
-    def add_new_utxos(self, transactions):
-        for tx in transactions:
-            self.utxos[tx.TxId] = tx
+    def add_new_outputs_from_block(self, block_obj):
+        for tx in block_obj.Txs:
+            tx_id = tx.id()
+            for index, tx_out in enumerate(tx.tx_outs):
+                if tx_out:
+                    self.utxos[f"{tx_id}_{index}"] = tx_out
 
     def remove_spent_utxos(self, spent_outputs):
         if not spent_outputs:
             return
 
         for tx_id_bytes, output_index in spent_outputs:
-            tx_id_hex = tx_id_bytes.hex()
-
-            if tx_id_hex in self.utxos:
-                tx_obj = self.utxos[tx_id_hex]
-
-                if 0 <= output_index < len(tx_obj.tx_outs):
-
-                    tx_obj.tx_outs[output_index] = None
-                    all_spent = True
-                    for out in tx_obj.tx_outs:
-                        if out is not None:
-                            all_spent = False
-                            break
-
-                    if all_spent:
-                        del self.utxos[tx_id_hex]
-                    else:
-                        self.utxos[tx_id_hex] = tx_obj
-
-                else:
-                    logging.warning(
-                        f"Output index {output_index} out of range for Tx {tx_id_hex}"
-                    )
+            key = f"{tx_id_bytes.hex()}_{output_index}"
+            if key in self.utxos:
+                del self.utxos[key]
+            else:
+                logging.warning(
+                    f"Tried to spend a non-existent or already-spent UTXO: {key}"
+                )

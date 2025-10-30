@@ -1,5 +1,4 @@
 import argparse
-import configparser
 import json
 import logging
 import os
@@ -9,7 +8,6 @@ import subprocess
 import sys
 import time
 from cmd import Cmd
-
 
 from src.chain.params import FEE_RATE_FAST, FEE_RATE_NORMAL, FEE_RATE_SLOW
 from src.utils.config_loader import get_config_dict, load_config, update_config
@@ -291,7 +289,7 @@ class KernelCLI(Cmd):
     def do_getheight(self, arg):
         print(f"{Colors.WARNING}Fetching height...{Colors.ENDC}", end="\r")
         response = self.rpc_call({"command": "get_chain_height"})
-        sys.stdout.write(" " * 20 + "\r")  
+        sys.stdout.write(" " * 20 + "\r")
         if response:
             print(
                 f"Current Block Height: {Colors.BOLD}{Colors.WARNING}{response.get('height')}{Colors.ENDC}"
@@ -300,7 +298,7 @@ class KernelCLI(Cmd):
     def do_listwallets(self, arg):
         print(f"{Colors.WARNING}Fetching wallets...{Colors.ENDC}", end="\r")
         response = self.rpc_call({"command": "get_wallets"})
-        sys.stdout.write(" " * 20 + "\r")  
+        sys.stdout.write(" " * 20 + "\r")
         if response:
             wallets = response.get("wallets", [])
             if not wallets:
@@ -422,7 +420,9 @@ class KernelCLI(Cmd):
             print(
                 f"  Amount: {Colors.OKGREEN}{Colors.BOLD}{amount_float} KOR{Colors.ENDC}"
             )
-            print(f"  Fee:    {Colors.WARNING}{args.fee} ({fee_rate} kores/b){Colors.ENDC}")
+            print(
+                f"  Fee:    {Colors.WARNING}{args.fee} ({fee_rate} kores/b){Colors.ENDC}"
+            )
 
             confirm = input(
                 f"\nAre you sure you want to send this transaction? (y/n): "
