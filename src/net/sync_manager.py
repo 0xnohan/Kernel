@@ -159,10 +159,11 @@ class SyncManager:
                         logger.debug(
                             f"Peer {peer_id_str} version: {peer_version.version}, height: {peer_version.start_height}"
                         )
+
+                        last_block = self.db.lastBlock()
+                        our_height = last_block["Height"] if last_block else 0
                         if self.peer_handshake_status.get(peer_id_str) is None:
-                            last_block = self.db.lastBlock()
-                            start_height = last_block["Height"] if last_block else 0
-                            version_msg = Version(start_height=start_height)
+                            version_msg = Version(start_height=our_height)
                             self.send_message(conn, version_msg)
                         verack_msg = VerAck()
                         self.send_message(conn, verack_msg)
@@ -170,6 +171,16 @@ class SyncManager:
                             "version_received": True,
                             "verack_received": False,
                         }
+
+                        if peer_version.start_height > our_height:
+                            logger.info(
+                                f"Peer {peer_id_str} has a longer chain (height {peer_version.start_height} vs our {our_height}). Starting sync..."
+                            )
+                            self.start_sync(conn)
+                        else:
+                            logger.debug(
+                                f"Peer {peer_id_str} is at height {peer_version.start_height} (our {our_height}). No sync needed from this peer"
+                            )
 
                     elif command == VerAck.command.decode():
                         if (
@@ -184,7 +195,6 @@ class SyncManager:
                             logger.debug(
                                 f"Handshake complete with {peer_id_str}. Connection established."
                             )
-                            self.start_sync(conn)
 
                     elif command == GetHeaders.command.decode():
                         getheaders_msg = GetHeaders.parse(envelope.stream())
@@ -294,10 +304,25 @@ class SyncManager:
                 if len(headers_to_send) >= MAX_HEADERS_TO_SEND:
                     break
 
-        if headers_to_send:
-            logger.info(f"Sending {len(headers_to_send)} headers to peer")
+        if found_start:
+            if headers_to_send:
+                logger.info(f"Sending {len(headers_to_send)} headers to peer")
+            else:
+                logger.info("Peer is up-to-date")
+            
             headers_msg = Headers(headers_to_send)
             self.send_message(conn, headers_msg)
+        
+        elif getheaders_msg.start_block.hex() == "00" * 32 and not all_blocks:
+             logger.info("Peer asked from genesis, we have no blocks")
+             headers_msg = Headers([])
+             self.send_message(conn, headers_msg)
+        
+        else:
+            logger.warning(
+                f"GetHeaders start_block {getheaders_msg.start_block.hex()} not found in main chain"
+            )
+    
 
     def handle_headers(self, conn, headers_msg):
         if not headers_msg.headers:
